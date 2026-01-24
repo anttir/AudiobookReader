@@ -85,10 +85,32 @@ const Drive = {
     },
 
     /**
+     * Check if file is EPUB
+     */
+    isEPUB(file) {
+        return CONFIG.SUPPORTED_TYPES.epub.includes(file.mimeType) ||
+               file.name.toLowerCase().endsWith('.epub');
+    },
+
+    /**
+     * Check if file is any ebook format
+     */
+    isEbook(file) {
+        return this.isPDF(file) || this.isEPUB(file);
+    },
+
+    /**
      * Check if file is audio
      */
     isAudio(file) {
-        return CONFIG.SUPPORTED_TYPES.audio.includes(file.mimeType);
+        // Check by MIME type
+        if (CONFIG.SUPPORTED_TYPES.audio.includes(file.mimeType)) {
+            return true;
+        }
+        // Also check by extension for better compatibility
+        const audioExtensions = ['.mp3', '.m4a', '.m4b', '.wav', '.ogg', '.flac', '.aac', '.wma', '.opus', '.webm'];
+        const name = file.name.toLowerCase();
+        return audioExtensions.some(ext => name.endsWith(ext));
     },
 
     /**
@@ -204,6 +226,8 @@ const Drive = {
         const organized = {
             folders: [],
             pdfs: [],
+            epubs: [],
+            ebooks: [],
             audio: [],
             archives: [],
             all: files
@@ -214,6 +238,10 @@ const Drive = {
                 organized.folders.push(file);
             } else if (this.isPDF(file)) {
                 organized.pdfs.push(file);
+                organized.ebooks.push(file);
+            } else if (this.isEPUB(file)) {
+                organized.epubs.push(file);
+                organized.ebooks.push(file);
             } else if (this.isAudio(file)) {
                 organized.audio.push(file);
             } else if (this.isArchive(file)) {
@@ -228,8 +256,165 @@ const Drive = {
 
         organized.folders.sort(naturalSort);
         organized.pdfs.sort(naturalSort);
+        organized.epubs.sort(naturalSort);
+        organized.ebooks.sort(naturalSort);
         organized.audio.sort(naturalSort);
 
         return organized;
+    },
+
+    /**
+     * Analyze folder to determine if it's a multi-part book
+     * Returns book info if folder contains multiple parts of same book
+     */
+    async analyzeBookFolder(folderId, folderName) {
+        const files = await this.getAllFilesInFolder(folderId);
+
+        const ebooks = files.filter(f => this.isEbook(f));
+        const audioFiles = files.filter(f => this.isAudio(f));
+        const subfolders = files.filter(f => this.isFolder(f));
+
+        // Determine if this is a multi-part book
+        const isMultiPartEbook = ebooks.length > 1;
+        const isMultiPartAudio = audioFiles.length > 1;
+        const hasContent = ebooks.length > 0 || audioFiles.length > 0;
+
+        // Natural sort
+        const naturalSort = (a, b) => {
+            return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+        };
+
+        ebooks.sort(naturalSort);
+        audioFiles.sort(naturalSort);
+
+        return {
+            id: folderId,
+            name: folderName,
+            isBook: hasContent && (isMultiPartEbook || isMultiPartAudio || subfolders.length === 0),
+            isMultiPart: isMultiPartEbook || isMultiPartAudio,
+            ebooks: ebooks,
+            audioFiles: audioFiles,
+            subfolders: subfolders,
+            ebookCount: ebooks.length,
+            audioCount: audioFiles.length,
+            // Determine primary type
+            primaryType: ebooks.length > 0 ? (audioFiles.length > 0 ? 'both' : 'ebook') : 'audio'
+        };
+    },
+
+    /**
+     * Get library structure - detects books (single or multi-part)
+     */
+    async getLibraryStructure(folderId) {
+        const files = await this.getAllFilesInFolder(folderId);
+        const library = {
+            books: [],
+            standaloneFiles: {
+                ebooks: [],
+                audio: []
+            }
+        };
+
+        const naturalSort = (a, b) => {
+            return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+        };
+
+        // Process folders as potential books
+        const folders = files.filter(f => this.isFolder(f));
+        for (const folder of folders) {
+            const bookInfo = await this.analyzeBookFolder(folder.id, folder.name);
+            if (bookInfo.isBook) {
+                library.books.push(bookInfo);
+            }
+        }
+
+        // Process standalone files (not in subfolders)
+        const standaloneEbooks = files.filter(f => this.isEbook(f));
+        const standaloneAudio = files.filter(f => this.isAudio(f));
+
+        // Group standalone files that might be parts of same book
+        // (e.g., "BookName Part 1.pdf", "BookName Part 2.pdf")
+        const ebookGroups = this.groupRelatedFiles(standaloneEbooks);
+        const audioGroups = this.groupRelatedFiles(standaloneAudio);
+
+        // Create book entries for grouped files
+        for (const [groupName, groupFiles] of Object.entries(ebookGroups)) {
+            if (groupFiles.length > 1) {
+                library.books.push({
+                    id: `group_${groupFiles[0].id}`,
+                    name: groupName,
+                    isBook: true,
+                    isMultiPart: true,
+                    ebooks: groupFiles.sort(naturalSort),
+                    audioFiles: [],
+                    subfolders: [],
+                    ebookCount: groupFiles.length,
+                    audioCount: 0,
+                    primaryType: 'ebook',
+                    isVirtualGroup: true
+                });
+            } else {
+                library.standaloneFiles.ebooks.push(groupFiles[0]);
+            }
+        }
+
+        for (const [groupName, groupFiles] of Object.entries(audioGroups)) {
+            if (groupFiles.length > 1) {
+                // Check if we already have a book with this name
+                const existingBook = library.books.find(b => b.name === groupName);
+                if (existingBook) {
+                    existingBook.audioFiles = groupFiles.sort(naturalSort);
+                    existingBook.audioCount = groupFiles.length;
+                    existingBook.primaryType = 'both';
+                } else {
+                    library.books.push({
+                        id: `group_audio_${groupFiles[0].id}`,
+                        name: groupName,
+                        isBook: true,
+                        isMultiPart: true,
+                        ebooks: [],
+                        audioFiles: groupFiles.sort(naturalSort),
+                        subfolders: [],
+                        ebookCount: 0,
+                        audioCount: groupFiles.length,
+                        primaryType: 'audio',
+                        isVirtualGroup: true
+                    });
+                }
+            } else {
+                library.standaloneFiles.audio.push(groupFiles[0]);
+            }
+        }
+
+        // Sort books by name
+        library.books.sort((a, b) => naturalSort(a, b));
+
+        return library;
+    },
+
+    /**
+     * Group related files by detecting common name patterns
+     */
+    groupRelatedFiles(files) {
+        const groups = {};
+
+        files.forEach(file => {
+            // Try to extract base name (remove part numbers, extensions)
+            let baseName = file.name
+                .replace(/\.[^/.]+$/, '')  // Remove extension
+                .replace(/[\s_-]*(osa|part|del|chapter|kappale|luku)[\s_-]*\d+/gi, '')  // Remove part indicators
+                .replace(/[\s_-]*\d+[\s_-]*$/g, '')  // Remove trailing numbers
+                .replace(/[\s_-]+$/, '')  // Remove trailing separators
+                .trim();
+
+            if (!baseName) baseName = file.name.replace(/\.[^/.]+$/, '');
+
+            if (!groups[baseName]) {
+                groups[baseName] = [];
+            }
+            groups[baseName].push(file);
+        });
+
+        return groups;
     }
 };

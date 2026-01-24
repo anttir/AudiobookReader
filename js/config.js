@@ -24,16 +24,31 @@ const CONFIG = {
     // Supported file types
     SUPPORTED_TYPES: {
         pdf: ['application/pdf'],
+        epub: ['application/epub+zip'],
+        ebook: ['application/pdf', 'application/epub+zip'],
         audio: [
             'audio/mpeg',
             'audio/mp3',
             'audio/mp4',
             'audio/m4a',
+            'audio/m4b',          // Audiobook format
             'audio/x-m4a',
+            'audio/x-m4b',
             'audio/wav',
+            'audio/wave',
+            'audio/x-wav',
             'audio/ogg',
+            'audio/vorbis',
             'audio/flac',
-            'audio/aac'
+            'audio/x-flac',
+            'audio/aac',
+            'audio/x-aac',
+            'audio/webm',
+            'audio/3gpp',
+            'audio/3gpp2',
+            'audio/aiff',
+            'audio/x-aiff',
+            'audio/basic'
         ],
         archive: [
             'application/zip',

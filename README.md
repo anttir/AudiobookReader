@@ -1,86 +1,180 @@
 # AudioBook Reader
 
-Web-sovellus PDF-kirjojen lukemiseen ja äänikirjojen kuunteluun suoraan Google Drivestä.
+Web-sovellus PDF- ja EPUB-kirjojen lukemiseen sekä äänikirjojen kuunteluun suoraan Google Drivestä.
 
 ## Ominaisuudet
 
 - **Google-kirjautuminen** - Kirjaudu sisään Google-tililläsi
 - **Google Drive -integraatio** - Lue tiedostoja suoraan Drivestäsi
 - **PDF-lukija** - Lue PDF-kirjoja selaimessa
-- **Äänisoitin** - Kuuntele äänikirjoja (MP3, M4A, WAV, OGG, FLAC)
-- **Edistymisen tallennus** - Sovellus muistaa missä kohtaa olit
-- **Tumma/vaalea teema** - Valitse mieleisesi ulkoasu
+- **EPUB-lukija** - Lue EPUB-muotoisia e-kirjoja
+- **Äänisoitin** - Kuuntele äänikirjoja (MP3, M4A, M4B, WAV, OGG, FLAC, AAC, OPUS)
+- **Moniosainen kirja -tuki** - Kansio = yksi kirja, jossa voi olla useita osia
+- **Edistymisen tallennus** - Sovellus muistaa missä kohtaa olit (TÄRKEIN TOIMINTO!)
+- **Jatka lukemista** - Näyttää viimeksi luetun kirjan kirjastossa
+- **Kuuntelunopeus** - Säädä toiston nopeutta (0.5x - 2x)
+- **Tumma/vaalea/seepia teema** - Valitse mieleisesi ulkoasu
 - **Mobiiliystävällinen** - Toimii myös puhelimella
 - **PWA-tuki** - Voit "asentaa" sovelluksen puhelimeesi
 
+## Tuetut tiedostomuodot
+
+### E-kirjat
+- PDF (.pdf)
+- EPUB (.epub)
+
+### Äänitiedostot
+- MP3 (.mp3)
+- M4A (.m4a)
+- M4B (.m4b) - Audiobook-muoto
+- WAV (.wav)
+- OGG (.ogg)
+- FLAC (.flac)
+- AAC (.aac)
+- OPUS (.opus)
+- WebM Audio (.webm)
+
+## Kirjarakenne Google Drivessa
+
+Sovellus tunnistaa automaattisesti miten kirjat on järjestetty:
+
+### Vaihtoehto 1: Kansio = Kirja (suositeltu moniosaisille kirjoille)
+```
+📁 Minun Kirjani/
+   📄 Osa 1.pdf
+   📄 Osa 2.pdf
+   📄 Osa 3.pdf
+   🎵 Luku 01.mp3
+   🎵 Luku 02.mp3
+```
+Sovellus näyttää tämän yhtenä kirjana "Minun Kirjani" ja osien välillä voi navigoida.
+
+### Vaihtoehto 2: Yksittäiset tiedostot
+```
+📁 Kirjasto/
+   📄 Kirja1.pdf
+   📄 Kirja2.epub
+   🎵 Podcast.mp3
+```
+Jokainen tiedosto näytetään erikseen.
+
+### Vaihtoehto 3: Sekalainen
+Voit myös yhdistää molempia - kansiot tunnistetaan kirjoiksi ja yksittäiset tiedostot näytetään erikseen.
+
+---
+
 ## Asennus ja käyttöönotto
 
-### 1. Luo Google Cloud -projekti
+### Vaihe 1: Luo Google Cloud -projekti
 
 1. Mene [Google Cloud Console](https://console.cloud.google.com/)
-2. Luo uusi projekti (tai käytä olemassa olevaa)
-3. Anna projektille nimi, esim. "AudioBook Reader"
+2. Klikkaa yläpalkissa projektin nimeä → **New Project**
+3. Anna nimi: `AudioBook Reader`
+4. Klikkaa **Create**
+5. Odota että projekti luodaan ja valitse se aktiiviseksi
 
-### 2. Ota käyttöön tarvittavat API:t
+### Vaihe 2: Ota käyttöön Google Drive API
 
-1. Mene **APIs & Services** → **Library**
-2. Etsi ja ota käyttöön:
-   - **Google Drive API**
-   - **Google Identity Services** (ei tarvitse erikseen ottaa käyttöön)
+1. Mene vasemmasta valikosta **APIs & Services** → **Library**
+2. Etsi hakukentällä: `Google Drive API`
+3. Klikkaa tulosta ja paina **Enable**
 
-### 3. Luo OAuth 2.0 -tunnukset
+### Vaihe 3: Määritä OAuth consent screen
+
+1. Mene **APIs & Services** → **OAuth consent screen**
+2. Valitse **External** (ellei sinulla ole Google Workspace)
+3. Klikkaa **Create**
+
+4. **App information:**
+   - App name: `AudioBook Reader`
+   - User support email: (valitse oma sähköpostisi)
+   - Developer contact: (oma sähköpostisi)
+
+5. Klikkaa **Save and Continue**
+
+6. **Scopes:** Klikkaa **Add or Remove Scopes** ja lisää:
+   - `https://www.googleapis.com/auth/drive.readonly`
+   - `https://www.googleapis.com/auth/userinfo.profile`
+   - `https://www.googleapis.com/auth/userinfo.email`
+   - Klikkaa **Update** ja sitten **Save and Continue**
+
+7. **Test users:** Klikkaa **Add Users** ja lisää oma Gmail-osoitteesi
+   - Klikkaa **Save and Continue**
+
+8. Klikkaa **Back to Dashboard**
+
+### Vaihe 4: Luo OAuth 2.0 Client ID
 
 1. Mene **APIs & Services** → **Credentials**
-2. Klikkaa **+ CREATE CREDENTIALS** → **OAuth client ID**
-3. Jos et ole vielä määrittänyt OAuth consent screen:
-   - Valitse **External** (tai Internal jos sinulla on Workspace)
-   - Täytä sovelluksen nimi: "AudioBook Reader"
-   - Lisää oma sähköpostisi käyttäjäksi
-   - Lisää scopet:
-     - `https://www.googleapis.com/auth/drive.readonly`
-     - `https://www.googleapis.com/auth/userinfo.profile`
-     - `https://www.googleapis.com/auth/userinfo.email`
-   - Tallenna
+2. Klikkaa **+ Create Credentials** → **OAuth client ID**
+3. Application type: **Web application**
+4. Name: `AudioBook Reader Web`
 
-4. Palaa **Credentials** ja luo OAuth client ID:
-   - Application type: **Web application**
-   - Name: "AudioBook Reader Web"
-   - Authorized JavaScript origins:
-     - `http://localhost:8000` (kehitykseen)
-     - `https://your-domain.com` (tuotantoon)
-   - Tallenna ja kopioi **Client ID**
+5. **Authorized JavaScript origins** - lisää:
+   - `http://localhost:8000` (kehitykseen)
+   - `http://127.0.0.1:8000`
+   - Myöhemmin lisää myös tuotanto-URL (esim. `https://username.github.io`)
 
-### 4. Luo API-avain (valinnainen)
+6. Klikkaa **Create**
 
-1. Klikkaa **+ CREATE CREDENTIALS** → **API key**
-2. Kopioi avain
-3. (Suositeltavaa) Rajoita avain:
-   - Application restrictions: HTTP referrers
-   - Lisää sallitut domainit
-   - API restrictions: Valitse "Google Drive API"
+7. **Kopioi Client ID** talteen - se näyttää tältä:
+   ```
+   123456789-abcdefg.apps.googleusercontent.com
+   ```
 
-### 5. Päivitä config.js
+### Vaihe 5: Päivitä config.js
 
-Avaa `js/config.js` ja päivitä:
+Avaa `js/config.js` ja korvaa placeholder oikealla Client ID:llä:
 
 ```javascript
 const CONFIG = {
-    GOOGLE_CLIENT_ID: 'YOUR_CLIENT_ID.apps.googleusercontent.com',
-    GOOGLE_API_KEY: 'YOUR_API_KEY',
+    GOOGLE_CLIENT_ID: '123456789-abcdefg.apps.googleusercontent.com',
     // ...
 };
 ```
 
+---
+
 ## Hostaus
 
-### Vaihtoehto 1: GitHub Pages (ilmainen)
+### Vaihtoehto A: Paikallinen kehityspalvelin (testaus)
 
-1. Pushaa koodi GitHubiin
-2. Mene repositoryn **Settings** → **Pages**
-3. Valitse branch: `main`, folder: `/ (root)`
-4. Lisää GitHub Pages URL OAuth consent screenille ja Credentialseihin
+```bash
+# Python 3
+python -m http.server 8000
 
-### Vaihtoehto 2: Firebase Hosting (ilmainen)
+# Node.js
+npx serve .
+
+# PHP
+php -S localhost:8000
+```
+
+Avaa selaimessa: http://localhost:8000
+
+### Vaihtoehto B: GitHub Pages (ilmainen, suositeltu)
+
+1. Luo uusi repository GitHubissa
+2. Pushaa koodi:
+   ```bash
+   git remote add origin https://github.com/USERNAME/audiobook-reader.git
+   git push -u origin main
+   ```
+
+3. Mene repositoryn **Settings** → **Pages**
+4. Source: **Deploy from a branch**
+5. Branch: **main**, folder: **/ (root)**
+6. Klikkaa **Save**
+
+7. **Tärkeää:** Lisää GitHub Pages URL Google Cloud Consoleen:
+   - Mene **APIs & Services** → **Credentials**
+   - Klikkaa OAuth Client ID:täsi
+   - Lisää **Authorized JavaScript origins**:
+     - `https://USERNAME.github.io`
+
+Sovellus on käytettävissä: `https://USERNAME.github.io/audiobook-reader/`
+
+### Vaihtoehto C: Firebase Hosting
 
 1. Asenna Firebase CLI:
    ```bash
@@ -96,9 +190,9 @@ const CONFIG = {
    ```bash
    firebase init hosting
    ```
-   - Valitse projektisi
-   - Public directory: `.` (nykyinen hakemisto)
-   - Single-page app: No
+   - Valitse: **Use an existing project** → valitse projektisi
+   - Public directory: `.`
+   - Single-page app: **No**
    - Älä ylikirjoita index.html
 
 4. Julkaise:
@@ -106,38 +200,61 @@ const CONFIG = {
    firebase deploy
    ```
 
-5. Lisää Firebase URL OAuth consent screenille ja Credentialseihin
+5. Lisää Firebase URL Google Cloud Consoleen OAuth-asetuksiin.
 
-### Vaihtoehto 3: Paikallinen kehityspalvelin
-
-```bash
-# Python 3
-python -m http.server 8000
-
-# Node.js (npx)
-npx serve .
-
-# PHP
-php -S localhost:8000
-```
-
-Avaa selaimessa: http://localhost:8000
+---
 
 ## Käyttö
 
 1. Avaa sovellus selaimessa
-2. Kirjaudu Google-tililläsi
-3. Valitse Google Drive -kansio, jossa kirjasi ovat
-4. Napauta tiedostoa aloittaaksesi lukemisen/kuuntelun
+2. Klikkaa **Kirjaudu Google-tilillä**
+3. Hyväksy käyttöoikeudet
+4. Valitse **Google Drive -kansio**, jossa kirjasi ovat
+5. Napauta kirjaa aloittaaksesi lukemisen/kuuntelun
 
-## Tuetut tiedostomuodot
+### Näppäinkomennot
 
-- **PDF** - Kirjat PDF-muodossa
-- **Audio** - MP3, M4A, WAV, OGG, FLAC, AAC
+| Näppäin | Toiminto |
+|---------|----------|
+| `←` / `→` | Edellinen/seuraava sivu (PDF/EPUB) |
+| `Space` | Toista/pysäytä (audio) tai seuraava sivu |
+| `←` / `→` | Kelaa 10s (audio-tilassa) |
+
+### Mobiilieleet
+
+- **Pyyhkäise vasemmalle/oikealle** - Vaihda sivua
+
+---
+
+## Vianmääritys
+
+### "Sign in with Google" -nappi ei toimi
+- Varmista että `GOOGLE_CLIENT_ID` on oikein `js/config.js`:ssä
+- Tarkista että domain on lisätty **Authorized JavaScript origins** -listaan
+- Jos käytät `http://localhost`, kokeile `http://127.0.0.1`
+
+### "Access blocked: This app's request is invalid"
+- OAuth consent screen ei ole konfiguroitu oikein
+- Varmista että olet lisännyt itsesi Test Users -listaan
+
+### PDF/EPUB ei lataudu
+- Varmista että sinulla on lukuoikeus tiedostoon Google Drivessa
+- Tarkista selaimen konsolista virheviestit (F12)
+
+### Ääni ei toistu
+- Tarkista selaimen ääniasetukset
+- Jotkut selaimet vaativat käyttäjän interaktiota ennen äänentoistoa
+
+### Edistyminen ei tallennu
+- Varmista että selaimesi sallii localStorage:n
+- Incognito/yksityinen selaus ei tallenna dataa
+
+---
 
 ## Teknologiat
 
 - **PDF.js** - PDF-näyttö selaimessa
+- **EPUB.js** - EPUB-näyttö selaimessa
 - **Google Identity Services** - Kirjautuminen
 - **Google Drive API** - Tiedostojen lukeminen
 - **Web Audio API** - Äänentoisto
@@ -148,25 +265,13 @@ Avaa selaimessa: http://localhost:8000
 - Sovellus käyttää vain `drive.readonly` -oikeutta (ei voi muokata tiedostojasi)
 - Access token tallennetaan vain selaimen localStorageen
 - Kaikki data pysyy omassa Google Drivessasi
-
-## Vianmääritys
-
-### "Kirjautuminen epäonnistui"
-- Varmista että Client ID on oikein
-- Tarkista että domain on lisätty OAuth credentialseihin
-- Poista evästeet ja yritä uudelleen
-
-### "PDF:n lataaminen epäonnistui"
-- Varmista että tiedosto on PDF-muodossa
-- Tarkista että sinulla on lukuoikeus tiedostoon
-
-### "Ääni ei toistu"
-- Tarkista selaimen ääniasetukset
-- Kokeile eri selaimella
+- Mitään ei lähetetä ulkoisille palvelimille
 
 ## Lisenssi
 
 MIT License
+
+---
 
 ## Tekijä
 

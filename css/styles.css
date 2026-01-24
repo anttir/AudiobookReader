@@ -1112,3 +1112,297 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-secondary);
 }
+
+/* EPUB Viewer */
+.epub-viewer {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-secondary);
+}
+
+#epub-location {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    min-width: 60px;
+    text-align: center;
+}
+
+/* Chapter list improvements */
+.chapter-list {
+    position: absolute;
+    top: 70px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg-secondary);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+}
+
+.chapter-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.chapter-list-header h3 {
+    font-size: 1rem;
+}
+
+.chapter-list ul {
+    flex: 1;
+    overflow-y: auto;
+    list-style: none;
+}
+
+.chapter-list li {
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: background var(--transition);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.chapter-list li:hover {
+    background: var(--bg-tertiary);
+}
+
+.chapter-list li.active {
+    background: var(--accent);
+    color: white;
+}
+
+.chapter-list li .chapter-progress {
+    margin-left: auto;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.chapter-list li.active .chapter-progress {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* Parts button for multi-file books */
+.parts-btn {
+    position: fixed;
+    bottom: 100px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: var(--accent);
+    border: none;
+    border-radius: 30px;
+    color: white;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: var(--shadow-lg);
+    z-index: 50;
+    transition: all var(--transition);
+}
+
+.parts-btn:hover {
+    transform: scale(1.05);
+    background: var(--accent-hover);
+}
+
+.parts-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
+/* Book card with type badge */
+.book-card .book-type-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 4px 8px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 4px;
+    font-size: 0.7rem;
+    color: white;
+    text-transform: uppercase;
+}
+
+/* Multi-part book indicator */
+.book-card .parts-indicator {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    padding: 4px 8px;
+    background: var(--accent);
+    border-radius: 4px;
+    font-size: 0.7rem;
+    color: white;
+}
+
+/* Book grid view */
+.book-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 20px;
+    padding: 10px 0;
+}
+
+.book-card {
+    background: var(--bg-secondary);
+    border-radius: var(--radius);
+    overflow: hidden;
+    cursor: pointer;
+    transition: all var(--transition);
+    box-shadow: var(--shadow);
+}
+
+.book-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+.book-cover {
+    width: 100%;
+    aspect-ratio: 2/3;
+    background: linear-gradient(135deg, var(--bg-tertiary), var(--accent));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.book-cover svg {
+    width: 50px;
+    height: 50px;
+    fill: white;
+    opacity: 0.8;
+}
+
+.book-cover .book-icon-text {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+    font-size: 0.8rem;
+    color: white;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.book-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.book-progress-bar {
+    height: 100%;
+    background: var(--success);
+    transition: width 0.3s ease;
+}
+
+.book-info {
+    padding: 12px;
+}
+
+.book-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.book-meta {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.book-meta svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}
+
+/* Section headers in library */
+.library-section {
+    margin-bottom: 24px;
+}
+
+.library-section h3 {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+    padding-left: 4px;
+}
+
+/* Continue reading card */
+.continue-reading {
+    background: linear-gradient(135deg, var(--accent), #6366f1);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 24px;
+    color: white;
+}
+
+.continue-reading h3 {
+    font-size: 0.8rem;
+    opacity: 0.8;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+.continue-reading .book-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.continue-reading .book-chapter {
+    font-size: 0.85rem;
+    opacity: 0.9;
+    margin-bottom: 12px;
+}
+
+.continue-reading .continue-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    border-radius: 20px;
+    color: white;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background var(--transition);
+}
+
+.continue-reading .continue-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.continue-reading .continue-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+}
