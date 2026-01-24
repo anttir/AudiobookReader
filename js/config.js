@@ -8,11 +8,11 @@
 const CONFIG = {
     // Google OAuth 2.0 Client ID
     // Get this from: https://console.cloud.google.com/apis/credentials
-    GOOGLE_CLIENT_ID: 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
+    GOOGLE_CLIENT_ID: '524735149839-e3pfcqlji0ij1f45tpf3af2ivqkosdgg.apps.googleusercontent.com',
 
     // Google API Key (for Drive API)
     // Get this from: https://console.cloud.google.com/apis/credentials
-    GOOGLE_API_KEY: 'YOUR_GOOGLE_API_KEY',
+    GOOGLE_API_KEY: 'AIzaSyDSim0N9T9HFinPha7KoQcUgkY9muTECTE',
 
     // Google Drive API scopes
     SCOPES: [
