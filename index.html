@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AudioBook Reader</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a1a2e">
+    <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf_viewer.min.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="loader"></div>
+        <p>Ladataan...</p>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="screen">
+        <div class="login-container">
+            <div class="app-logo">
+                <svg viewBox="0 0 100 100" class="book-icon">
+                    <path d="M20 15 Q10 15 10 25 L10 85 Q10 90 15 90 L50 90 L85 90 Q90 90 90 85 L90 25 Q90 15 80 15 L50 20 L20 15 Z" fill="#4a90d9"/>
+                    <path d="M50 20 L50 90" stroke="#2d5a8a" stroke-width="2"/>
+                    <path d="M20 25 L45 28 L45 80 L20 77 Z" fill="#e8f4f8"/>
+                    <path d="M55 28 L80 25 L80 77 L55 80 Z" fill="#e8f4f8"/>
+                </svg>
+                <h1>AudioBook Reader</h1>
+            </div>
+            <p class="tagline">Lue ja kuuntele kirjojasi Google Drivestä</p>
+
+            <div id="google-signin-btn" class="google-btn">
+                <svg viewBox="0 0 24 24" class="google-icon">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                Kirjaudu Google-tilillä
+            </div>
+
+            <p class="info-text">Sovellus käyttää Google Drive -tiliäsi kirjojen lukemiseen</p>
+        </div>
+    </div>
+
+    <!-- Library Screen -->
+    <div id="library-screen" class="screen hidden">
+        <header class="app-header">
+            <h1>Kirjasto</h1>
+            <div class="header-actions">
+                <button id="refresh-btn" class="icon-btn" title="Päivitä">
+                    <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                </button>
+                <button id="settings-btn" class="icon-btn" title="Asetukset">
+                    <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+                </button>
+                <div id="user-avatar" class="user-avatar" title="Käyttäjä">
+                    <img src="" alt="User" id="user-image">
+                </div>
+            </div>
+        </header>
+
+        <div class="folder-selector">
+            <button id="select-folder-btn" class="select-folder-btn">
+                <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                <span id="folder-name">Valitse kansio Google Drivestä</span>
+            </button>
+        </div>
+
+        <div id="library-content" class="library-content">
+            <div class="empty-state">
+                <svg viewBox="0 0 100 100" class="empty-icon">
+                    <rect x="20" y="30" width="60" height="50" rx="5" fill="#4a90d9" opacity="0.3"/>
+                    <path d="M30 45 L70 45" stroke="#4a90d9" stroke-width="3"/>
+                    <path d="M30 55 L60 55" stroke="#4a90d9" stroke-width="3"/>
+                    <path d="M30 65 L50 65" stroke="#4a90d9" stroke-width="3"/>
+                </svg>
+                <p>Valitse kansio nähdäksesi kirjat</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reader Screen -->
+    <div id="reader-screen" class="screen hidden">
+        <header class="reader-header">
+            <button id="back-to-library" class="icon-btn">
+                <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+            </button>
+            <div class="reader-title">
+                <h2 id="current-book-title">Kirjan nimi</h2>
+                <span id="current-chapter">Luku 1</span>
+            </div>
+            <div class="reader-actions">
+                <button id="toggle-mode" class="icon-btn" title="Vaihda tilaa">
+                    <svg viewBox="0 0 24 24" class="mode-icon-read"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5z"/></svg>
+                    <svg viewBox="0 0 24 24" class="mode-icon-listen hidden"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                </button>
+                <button id="reader-settings-btn" class="icon-btn" title="Lukuasetukset">
+                    <svg viewBox="0 0 24 24"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- PDF Viewer -->
+        <div id="pdf-viewer-container" class="viewer-container">
+            <div id="pdf-viewer" class="pdf-viewer"></div>
+            <div class="page-navigation">
+                <button id="prev-page" class="nav-btn">
+                    <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+                </button>
+                <span id="page-info">1 / 1</span>
+                <button id="next-page" class="nav-btn">
+                    <svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Audio Player -->
+        <div id="audio-player-container" class="player-container hidden">
+            <div class="album-art">
+                <svg viewBox="0 0 100 100" class="default-art">
+                    <rect width="100" height="100" fill="#2d3748"/>
+                    <circle cx="50" cy="45" r="20" fill="#4a90d9"/>
+                    <path d="M45 35 L45 55 L60 45 Z" fill="white"/>
+                </svg>
+                <img id="album-cover" src="" alt="Album art" class="hidden">
+            </div>
+
+            <div class="audio-info">
+                <h3 id="audio-title">Kappale</h3>
+                <p id="audio-chapter">Luku 1</p>
+            </div>
+
+            <div class="progress-container">
+                <span id="current-time">0:00</span>
+                <input type="range" id="progress-bar" class="progress-bar" min="0" max="100" value="0">
+                <span id="duration">0:00</span>
+            </div>
+
+            <div class="audio-controls">
+                <button id="prev-track" class="control-btn">
+                    <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                </button>
+                <button id="rewind-30" class="control-btn small">
+                    <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
+                    <span>30</span>
+                </button>
+                <button id="play-pause" class="control-btn play-btn">
+                    <svg viewBox="0 0 24 24" class="play-icon"><path d="M8 5v14l11-7z"/></svg>
+                    <svg viewBox="0 0 24 24" class="pause-icon hidden"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                </button>
+                <button id="forward-30" class="control-btn small">
+                    <svg viewBox="0 0 24 24"><path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/></svg>
+                    <span>30</span>
+                </button>
+                <button id="next-track" class="control-btn">
+                    <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                </button>
+            </div>
+
+            <div class="speed-control">
+                <span>Nopeus:</span>
+                <select id="playback-speed">
+                    <option value="0.5">0.5x</option>
+                    <option value="0.75">0.75x</option>
+                    <option value="1" selected>1x</option>
+                    <option value="1.25">1.25x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="1.75">1.75x</option>
+                    <option value="2">2x</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Chapter List -->
+        <div id="chapter-list" class="chapter-list hidden">
+            <h3>Sisällysluettelo</h3>
+            <ul id="chapters"></ul>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Asetukset</h3>
+                <button id="close-settings" class="icon-btn">
+                    <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <h4>Teema</h4>
+                    <div class="theme-options">
+                        <button class="theme-btn" data-theme="light">Vaalea</button>
+                        <button class="theme-btn active" data-theme="dark">Tumma</button>
+                        <button class="theme-btn" data-theme="sepia">Seepia</button>
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <h4>Fonttikoko</h4>
+                    <div class="font-size-control">
+                        <button id="font-decrease" class="icon-btn">A-</button>
+                        <span id="font-size-value">100%</span>
+                        <button id="font-increase" class="icon-btn">A+</button>
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <h4>Google Drive -kansio</h4>
+                    <p id="current-folder-path">Ei valittu</p>
+                    <button id="change-folder-btn" class="secondary-btn">Vaihda kansio</button>
+                </div>
+                <div class="setting-group">
+                    <h4>Tili</h4>
+                    <div class="account-info">
+                        <img id="settings-user-image" src="" alt="User">
+                        <span id="settings-user-name">Käyttäjä</span>
+                    </div>
+                    <button id="logout-btn" class="danger-btn">Kirjaudu ulos</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reader Settings Modal -->
+    <div id="reader-settings-modal" class="modal hidden">
+        <div class="modal-content compact">
+            <div class="modal-header">
+                <h3>Lukuasetukset</h3>
+                <button id="close-reader-settings" class="icon-btn">
+                    <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <h4>Näyttötila</h4>
+                    <div class="display-options">
+                        <button class="display-btn active" data-display="single">Yksi sivu</button>
+                        <button class="display-btn" data-display="double">Kaksi sivua</button>
+                        <button class="display-btn" data-display="scroll">Vieritys</button>
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <h4>Zoom</h4>
+                    <div class="zoom-control">
+                        <button id="zoom-out" class="icon-btn">-</button>
+                        <span id="zoom-value">100%</span>
+                        <button id="zoom-in" class="icon-btn">+</button>
+                        <button id="zoom-fit" class="secondary-btn">Sovita</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Picker (Google Drive) -->
+    <div id="file-picker-modal" class="modal hidden">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <button id="picker-back" class="icon-btn hidden">
+                    <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+                </button>
+                <h3 id="picker-title">Valitse kansio</h3>
+                <button id="close-picker" class="icon-btn">
+                    <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="picker-content" class="picker-content">
+                    <div class="picker-loading">
+                        <div class="loader"></div>
+                        <p>Ladataan...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="picker-cancel" class="secondary-btn">Peruuta</button>
+                <button id="picker-select" class="primary-btn" disabled>Valitse tämä kansio</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Audio element (hidden) -->
+    <audio id="audio-element"></audio>
+
+    <!-- Scripts -->
+    <script src="js/config.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/drive.js"></script>
+    <script src="js/pdfviewer.js"></script>
+    <script src="js/audioplayer.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
