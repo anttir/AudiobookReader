@@ -7,7 +7,9 @@ const AudioPlayer = {
     playlist: [],
     currentIndex: 0,
     currentFileId: null,
+    currentBlobUrl: null,  // Store blob URL for cleanup
     isPlaying: false,
+    isLoading: false,
     updateInterval: null,
 
     /**
@@ -30,6 +32,7 @@ const AudioPlayer = {
         this.audio.addEventListener('play', () => this.onPlay());
         this.audio.addEventListener('pause', () => this.onPause());
         this.audio.addEventListener('error', (e) => this.onError(e));
+        this.audio.addEventListener('canplay', () => this.onCanPlay());
 
         // Control buttons
         document.getElementById('play-pause').addEventListener('click', () => this.togglePlayPause());
@@ -86,8 +89,7 @@ const AudioPlayer = {
     setPlaylist(audioFiles) {
         this.playlist = audioFiles.map(file => ({
             id: file.id,
-            name: file.name,
-            url: Drive.getStreamUrl(file.id)
+            name: file.name
         }));
     },
 
@@ -95,6 +97,9 @@ const AudioPlayer = {
      * Load and play a specific file
      */
     async loadTrack(fileId, fileName) {
+        if (this.isLoading) return false;
+
+        this.isLoading = true;
         this.currentFileId = fileId;
 
         // Find in playlist
@@ -103,15 +108,27 @@ const AudioPlayer = {
             this.currentIndex = index;
         }
 
-        try {
-            // Get streaming URL
-            const url = Drive.getStreamUrl(fileId);
-            this.audio.src = url;
+        // Update UI immediately
+        document.getElementById('audio-title').textContent = this.cleanFileName(fileName);
+        document.getElementById('audio-chapter').textContent = `Kappale ${this.currentIndex + 1} / ${this.playlist.length}`;
+        document.getElementById('current-book-title').textContent = this.cleanFileName(fileName);
+        document.getElementById('current-time').textContent = 'Ladataan...';
+        document.getElementById('duration').textContent = '';
 
-            // Update UI
-            document.getElementById('audio-title').textContent = this.cleanFileName(fileName);
-            document.getElementById('audio-chapter').textContent = `Kappale ${this.currentIndex + 1} / ${this.playlist.length}`;
-            document.getElementById('current-book-title').textContent = this.cleanFileName(fileName);
+        try {
+            // Clean up previous blob URL
+            if (this.currentBlobUrl) {
+                URL.revokeObjectURL(this.currentBlobUrl);
+                this.currentBlobUrl = null;
+            }
+
+            // Download audio file as blob (this uses Authorization header properly)
+            App.showToast('Ladataan äänitiedostoa...', 'info');
+            const blob = await Drive.downloadFile(fileId);
+
+            // Create blob URL
+            this.currentBlobUrl = URL.createObjectURL(blob);
+            this.audio.src = this.currentBlobUrl;
 
             // Get saved progress
             const progress = Storage.getBookProgress(fileId);
@@ -122,16 +139,25 @@ const AudioPlayer = {
             // Update Media Session
             this.updateMediaSession(fileName);
 
-            // Start playing
-            await this.play();
-
+            this.isLoading = false;
             return true;
 
         } catch (error) {
             console.error('Error loading audio:', error);
+            this.isLoading = false;
             App.showToast('Äänitiedoston lataaminen epäonnistui', 'error');
             return false;
         }
+    },
+
+    /**
+     * Called when audio can start playing
+     */
+    onCanPlay() {
+        if (this.isLoading) return;
+
+        // Auto-play when loaded
+        this.play();
     },
 
     /**
@@ -167,6 +193,8 @@ const AudioPlayer = {
             await this.audio.play();
         } catch (error) {
             console.error('Play error:', error);
+            // On mobile, user interaction is required
+            App.showToast('Paina play aloittaaksesi', 'info');
         }
     },
 
@@ -181,6 +209,8 @@ const AudioPlayer = {
      * Toggle play/pause
      */
     togglePlayPause() {
+        if (this.isLoading) return;
+
         if (this.isPlaying) {
             this.pause();
         } else {
@@ -192,6 +222,7 @@ const AudioPlayer = {
      * Seek relative to current position
      */
     seek(seconds) {
+        if (!this.audio.duration) return;
         const newTime = this.audio.currentTime + seconds;
         this.audio.currentTime = Math.max(0, Math.min(newTime, this.audio.duration));
     },
@@ -300,6 +331,11 @@ const AudioPlayer = {
      */
     onError(e) {
         console.error('Audio error:', e);
+        if (this.audio.error) {
+            console.error('Audio error code:', this.audio.error.code);
+            console.error('Audio error message:', this.audio.error.message);
+        }
+        this.isLoading = false;
         App.showToast('Virhe äänitiedoston toistossa', 'error');
     },
 
@@ -378,6 +414,10 @@ const AudioPlayer = {
      */
     destroy() {
         this.pause();
+        if (this.currentBlobUrl) {
+            URL.revokeObjectURL(this.currentBlobUrl);
+            this.currentBlobUrl = null;
+        }
         this.audio.src = '';
         this.playlist = [];
         this.currentIndex = 0;
