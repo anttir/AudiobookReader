@@ -14,6 +14,17 @@ const EPUBViewer = {
     init() {
         this.setupNavigation();
         this.setupGestures();
+
+        // Save progress when page visibility changes or before unload
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                this.saveProgress();
+            }
+        });
+
+        window.addEventListener('beforeunload', () => {
+            this.saveProgress();
+        });
     },
 
     /**
@@ -81,6 +92,9 @@ const EPUBViewer = {
             // Wait for book to be ready
             await this.book.ready;
 
+            // Generate locations for progress tracking (critical for saving position!)
+            await this.book.locations.generate(1024);
+
             // Get container
             const container = document.getElementById('epub-viewer');
             container.innerHTML = '';
@@ -96,18 +110,26 @@ const EPUBViewer = {
             // Apply theme
             this.applyTheme();
 
-            // Get saved progress
-            const progress = Storage.getBookProgress(fileId);
-            if (progress?.cfi) {
-                await this.rendition.display(progress.cfi);
-            } else {
-                await this.rendition.display();
-            }
-
-            // Setup location change handler
+            // Setup location change handler BEFORE display so we catch the first location
             this.rendition.on('locationChanged', (location) => {
                 this.onLocationChanged(location);
             });
+
+            // Get saved progress and display
+            const progress = Storage.getBookProgress(fileId);
+            console.log('EPUB: Loaded progress for', fileId, progress);
+
+            if (progress?.cfi) {
+                try {
+                    await this.rendition.display(progress.cfi);
+                    console.log('EPUB: Restored to CFI', progress.cfi);
+                } catch (e) {
+                    console.warn('EPUB: Could not restore CFI, starting from beginning', e);
+                    await this.rendition.display();
+                }
+            } else {
+                await this.rendition.display();
+            }
 
             // Update UI
             document.getElementById('current-book-title').textContent = this.cleanFileName(fileName);
@@ -214,19 +236,26 @@ const EPUBViewer = {
      * Save reading progress
      */
     saveProgress() {
-        if (!this.currentFileId || !this.currentLocation) return;
+        if (!this.currentFileId || !this.currentLocation) {
+            console.log('EPUB: Cannot save progress - no fileId or location');
+            return;
+        }
 
         let percentage = 0;
-        if (this.book.locations && this.book.locations.length()) {
+        if (this.book && this.book.locations && this.book.locations.length()) {
             percentage = Math.round(
                 this.book.locations.percentageFromCfi(this.currentLocation.start.cfi) * 100
             );
         }
 
-        Storage.setBookProgress(this.currentFileId, {
+        const progressData = {
             cfi: this.currentLocation.start.cfi,
-            percentage: percentage
-        });
+            percentage: percentage,
+            timestamp: Date.now()
+        };
+
+        console.log('EPUB: Saving progress', this.currentFileId, progressData);
+        Storage.setBookProgress(this.currentFileId, progressData);
     },
 
     /**

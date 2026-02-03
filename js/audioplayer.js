@@ -19,6 +19,17 @@ const AudioPlayer = {
         this.audio = document.getElementById('audio-element');
         this.setupEventListeners();
         this.setupMediaSession();
+
+        // Save progress when page visibility changes or before unload
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                this.saveProgress();
+            }
+        });
+
+        window.addEventListener('beforeunload', () => {
+            this.saveProgress();
+        });
     },
 
     /**

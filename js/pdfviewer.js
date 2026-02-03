@@ -7,6 +7,7 @@ const PDFViewer = {
     currentPage: 1,
     totalPages: 0,
     scale: 1.5,
+    manualZoom: false,  // Flag to preserve user-set zoom
     rendering: false,
     pendingPage: null,
     currentFileId: null,
@@ -32,6 +33,17 @@ const PDFViewer = {
         // Setup navigation
         this.setupNavigation();
         this.setupGestures();
+
+        // Save progress when page visibility changes or before unload
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                this.saveProgress();
+            }
+        });
+
+        window.addEventListener('beforeunload', () => {
+            this.saveProgress();
+        });
     },
 
     /**
@@ -88,6 +100,7 @@ const PDFViewer = {
      */
     async loadFromDrive(fileId, fileName) {
         this.currentFileId = fileId;
+        this.manualZoom = false;  // Reset zoom mode for new book
 
         try {
             App.showLoading(true);
@@ -136,17 +149,23 @@ const PDFViewer = {
         try {
             const page = await this.pdfDoc.getPage(pageNum);
 
-            // Calculate scale to fit container
+            // Calculate scale to fit container (only if not manually zoomed)
             const container = document.getElementById('pdf-viewer');
             const containerWidth = container.clientWidth - 40;
             const containerHeight = container.clientHeight - 40;
 
             const viewport = page.getViewport({ scale: 1 });
-            const scaleX = containerWidth / viewport.width;
-            const scaleY = containerHeight / viewport.height;
-            this.scale = Math.min(scaleX, scaleY, 2); // Max scale 2x
+
+            if (!this.manualZoom) {
+                const scaleX = containerWidth / viewport.width;
+                const scaleY = containerHeight / viewport.height;
+                this.scale = Math.min(scaleX, scaleY, 2); // Max scale 2x
+            }
 
             const scaledViewport = page.getViewport({ scale: this.scale });
+
+            // Update zoom display
+            this.updateZoomDisplay();
 
             // Set canvas size
             this.canvas.height = scaledViewport.height;
@@ -234,10 +253,21 @@ const PDFViewer = {
     },
 
     /**
+     * Update zoom display in UI
+     */
+    updateZoomDisplay() {
+        const zoomValue = document.getElementById('zoom-value');
+        if (zoomValue) {
+            zoomValue.textContent = Math.round(this.scale * 100) + '%';
+        }
+    },
+
+    /**
      * Set zoom level
      */
     setZoom(scale) {
         this.scale = scale;
+        this.manualZoom = true;
         this.renderPage(this.currentPage);
     },
 
@@ -259,7 +289,7 @@ const PDFViewer = {
      * Fit to width
      */
     fitToWidth() {
-        const container = document.getElementById('pdf-viewer');
+        this.manualZoom = false;  // Reset to auto-fit mode
         this.renderPage(this.currentPage);
     },
 
@@ -282,5 +312,6 @@ const PDFViewer = {
         this.currentFileId = null;
         this.currentPage = 1;
         this.totalPages = 0;
+        this.manualZoom = false;
     }
 };
