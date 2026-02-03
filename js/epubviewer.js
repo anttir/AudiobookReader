@@ -192,12 +192,16 @@ const EPUBViewer = {
      * On location changed
      */
     onLocationChanged(location) {
+        console.log('EPUB: Location changed', JSON.stringify(location, null, 2));
         this.currentLocation = location;
+
+        // Extract CFI - epub.js can have different structures
+        const cfi = location?.start?.cfi || location?.startCfi || location?.cfi || location?.end?.cfi;
 
         // Update progress display
         try {
-            if (this.book && this.book.locations && this.book.locations.length()) {
-                const percent = this.book.locations.percentageFromCfi(location.start.cfi);
+            if (cfi && this.book && this.book.locations && this.book.locations.length()) {
+                const percent = this.book.locations.percentageFromCfi(cfi);
                 if (typeof percent === 'number' && !isNaN(percent)) {
                     document.getElementById('epub-location').textContent = `${Math.round(percent * 100)}%`;
                     document.getElementById('current-chapter').textContent = `${Math.round(percent * 100)}% luettu`;
@@ -247,10 +251,20 @@ const EPUBViewer = {
             return;
         }
 
+        // Extract CFI - epub.js can have different structures
+        const cfi = this.currentLocation?.start?.cfi ||
+                    this.currentLocation?.startCfi ||
+                    this.currentLocation?.cfi;
+
+        if (!cfi) {
+            console.log('EPUB: No CFI found in location', this.currentLocation);
+            return;
+        }
+
         let percentage = 0;
         try {
             if (this.book && this.book.locations && this.book.locations.length()) {
-                const pct = this.book.locations.percentageFromCfi(this.currentLocation.start.cfi);
+                const pct = this.book.locations.percentageFromCfi(cfi);
                 if (typeof pct === 'number' && !isNaN(pct)) {
                     percentage = Math.round(pct * 100);
                 }
@@ -260,7 +274,7 @@ const EPUBViewer = {
         }
 
         const progressData = {
-            cfi: this.currentLocation.start.cfi,
+            cfi: cfi,
             percentage: percentage,
             timestamp: Date.now()
         };
