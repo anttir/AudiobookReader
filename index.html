@@ -143,6 +143,13 @@
 
         <!-- Audio Player -->
         <div id="audio-player-container" class="player-container hidden">
+            <!-- Loading overlay for audio -->
+            <div id="audio-loading" class="audio-loading hidden">
+                <div class="audio-loader"></div>
+                <p id="audio-loading-text">Ladataan äänitiedostoa...</p>
+                <p id="audio-loading-size"></p>
+            </div>
+
             <div class="album-art">
                 <svg viewBox="0 0 100 100" class="default-art">
                     <rect width="100" height="100" fill="#2d3748"/>

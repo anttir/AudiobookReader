@@ -94,6 +94,32 @@ const AudioPlayer = {
     },
 
     /**
+     * Show loading overlay
+     */
+    showLoading(show, text = 'Ladataan äänitiedostoa...', size = '') {
+        const overlay = document.getElementById('audio-loading');
+        const textEl = document.getElementById('audio-loading-text');
+        const sizeEl = document.getElementById('audio-loading-size');
+
+        if (show) {
+            overlay.classList.remove('hidden');
+            textEl.textContent = text;
+            sizeEl.textContent = size;
+        } else {
+            overlay.classList.add('hidden');
+        }
+    },
+
+    /**
+     * Format file size
+     */
+    formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    },
+
+    /**
      * Load and play a specific file
      */
     async loadTrack(fileId, fileName) {
@@ -112,8 +138,11 @@ const AudioPlayer = {
         document.getElementById('audio-title').textContent = this.cleanFileName(fileName);
         document.getElementById('audio-chapter').textContent = `Kappale ${this.currentIndex + 1} / ${this.playlist.length}`;
         document.getElementById('current-book-title').textContent = this.cleanFileName(fileName);
-        document.getElementById('current-time').textContent = 'Ladataan...';
+        document.getElementById('current-time').textContent = '0:00';
         document.getElementById('duration').textContent = '';
+
+        // Show loading overlay
+        this.showLoading(true, 'Ladataan: ' + this.cleanFileName(fileName));
 
         try {
             // Clean up previous blob URL
@@ -123,8 +152,10 @@ const AudioPlayer = {
             }
 
             // Download audio file as blob (this uses Authorization header properly)
-            App.showToast('Ladataan äänitiedostoa...', 'info');
             const blob = await Drive.downloadFile(fileId);
+
+            // Update loading with file size
+            this.showLoading(true, 'Valmistellaan toistoa...', this.formatSize(blob.size));
 
             // Create blob URL
             this.currentBlobUrl = URL.createObjectURL(blob);
@@ -139,12 +170,16 @@ const AudioPlayer = {
             // Update Media Session
             this.updateMediaSession(fileName);
 
+            // Hide loading when ready to play
             this.isLoading = false;
+            this.showLoading(false);
+
             return true;
 
         } catch (error) {
             console.error('Error loading audio:', error);
             this.isLoading = false;
+            this.showLoading(false);
             App.showToast('Äänitiedoston lataaminen epäonnistui', 'error');
             return false;
         }
