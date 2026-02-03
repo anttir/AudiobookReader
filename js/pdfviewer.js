@@ -96,6 +96,13 @@ const PDFViewer = {
     },
 
     /**
+     * Clean file name for display
+     */
+    cleanFileName(name) {
+        return name.replace(/\.pdf$/i, '').replace(/_/g, ' ').trim();
+    },
+
+    /**
      * Load a PDF from Google Drive
      */
     async loadFromDrive(fileId, fileName) {
@@ -103,10 +110,13 @@ const PDFViewer = {
         this.manualZoom = false;  // Reset zoom mode for new book
 
         try {
-            App.showLoading(true);
+            App.showLoading(true, 'Ladataan: ' + this.cleanFileName(fileName));
 
-            // Download the PDF
-            const arrayBuffer = await Drive.downloadFileAsArrayBuffer(fileId);
+            // Download the PDF with progress tracking
+            const blob = await Drive.downloadFileWithProgress(fileId, (loaded, total) => {
+                App.updateLoadingProgress(loaded, total);
+            });
+            const arrayBuffer = await blob.arrayBuffer();
 
             // Load with PDF.js
             const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });

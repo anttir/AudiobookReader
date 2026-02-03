@@ -918,12 +918,41 @@ const App = {
     /**
      * Show loading overlay
      */
-    showLoading(show) {
+    showLoading(show, text = 'Ladataan...') {
         const loading = document.getElementById('loading-screen');
+        const textEl = document.getElementById('loading-text');
+
         if (show) {
             loading.classList.remove('hidden');
+            if (textEl) textEl.textContent = text;
+            this.updateLoadingProgress(0, 0);
         } else {
             loading.classList.add('hidden');
+        }
+    },
+
+    /**
+     * Update loading progress
+     */
+    updateLoadingProgress(loaded, total) {
+        const barEl = document.getElementById('loading-bar');
+        const percentEl = document.getElementById('loading-percent');
+
+        if (!barEl || !percentEl) return;
+
+        if (total > 0) {
+            const percent = Math.round((loaded / total) * 100);
+            barEl.style.width = percent + '%';
+            const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
+            const totalMB = (total / (1024 * 1024)).toFixed(1);
+            percentEl.textContent = `${percent}% (${loadedMB} / ${totalMB} MB)`;
+        } else if (loaded > 0) {
+            barEl.style.width = '50%';
+            const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
+            percentEl.textContent = `${loadedMB} MB`;
+        } else {
+            barEl.style.width = '0%';
+            percentEl.textContent = '0%';
         }
     },
 

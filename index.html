@@ -22,9 +22,12 @@
 </head>
 <body>
     <!-- Loading Screen -->
-    <div id="loading-screen" class="loading-screen">
-        <div class="loader"></div>
-        <p>Ladataan...</p>
+    <div id="loading-screen" class="loading-screen hidden">
+        <p id="loading-text">Ladataan...</p>
+        <div class="progress-bar-container">
+            <div id="loading-bar" class="progress-bar"></div>
+        </div>
+        <p id="loading-percent">0%</p>
     </div>
 
     <!-- Login Screen -->

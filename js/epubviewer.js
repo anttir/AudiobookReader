@@ -80,10 +80,12 @@ const EPUBViewer = {
         this.currentFileId = fileId;
 
         try {
-            App.showLoading(true);
+            App.showLoading(true, 'Ladataan: ' + this.cleanFileName(fileName));
 
-            // Download the EPUB
-            const blob = await Drive.downloadFile(fileId);
+            // Download the EPUB with progress tracking
+            const blob = await Drive.downloadFileWithProgress(fileId, (loaded, total) => {
+                App.updateLoadingProgress(loaded, total);
+            });
             const arrayBuffer = await blob.arrayBuffer();
 
             // Create book
@@ -195,8 +197,11 @@ const EPUBViewer = {
         console.log('EPUB: Location changed', JSON.stringify(location, null, 2));
         this.currentLocation = location;
 
-        // Extract CFI - epub.js can have different structures
-        const cfi = location?.start?.cfi || location?.startCfi || location?.cfi || location?.end?.cfi;
+        // Extract CFI - epub.js returns CFI directly as string in start/end
+        const startVal = location?.start;
+        const cfi = (typeof startVal === 'string' && startVal.startsWith('epubcfi'))
+            ? startVal
+            : (startVal?.cfi || location?.startCfi || location?.cfi || location?.end);
 
         // Update progress display
         try {
@@ -251,10 +256,11 @@ const EPUBViewer = {
             return;
         }
 
-        // Extract CFI - epub.js can have different structures
-        const cfi = this.currentLocation?.start?.cfi ||
-                    this.currentLocation?.startCfi ||
-                    this.currentLocation?.cfi;
+        // Extract CFI - epub.js returns CFI directly as string in start/end
+        const startVal = this.currentLocation?.start;
+        const cfi = (typeof startVal === 'string' && startVal.startsWith('epubcfi'))
+            ? startVal
+            : (startVal?.cfi || this.currentLocation?.startCfi || this.currentLocation?.cfi);
 
         if (!cfi) {
             console.log('EPUB: No CFI found in location', this.currentLocation);
