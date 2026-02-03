@@ -112,6 +112,22 @@ const App = {
         document.getElementById('zoom-out').addEventListener('click', () => PDFViewer.zoomOut());
         document.getElementById('zoom-fit').addEventListener('click', () => PDFViewer.fitToWidth());
 
+        // EPUB theme buttons
+        document.querySelectorAll('.theme-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const theme = btn.dataset.theme;
+                // Update button states
+                document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                // Apply theme to EPUB
+                EPUBViewer.applyTheme(theme);
+            });
+        });
+
+        // Set initial theme button state
+        const savedTheme = Storage.getSettings().readerTheme || 'dark';
+        document.querySelector(`.theme-btn[data-theme="${savedTheme}"]`)?.classList.add('active');
+
         // File picker
         document.getElementById('close-picker').addEventListener('click', () => {
             this.closeModal('file-picker-modal');

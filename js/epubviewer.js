@@ -155,35 +155,58 @@ const EPUBViewer = {
     },
 
     /**
-     * Apply current theme to EPUB
+     * Apply current theme to EPUB (forces colors to override book styles)
      */
-    applyTheme() {
+    applyTheme(themeName = null) {
         if (!this.rendition) return;
 
         const settings = Storage.getSettings();
+        const activeTheme = themeName || settings.readerTheme || 'dark';
+
+        // Save theme preference
+        if (themeName) {
+            Storage.setSettings({ readerTheme: themeName });
+        }
+
+        // Theme definitions with aggressive overrides
         const themes = {
             dark: {
-                body: {
-                    background: '#1a1a2e',
-                    color: '#eaeaea'
-                }
+                bg: '#1a1a2e',
+                text: '#eaeaea',
+                link: '#6bb5ff'
             },
             light: {
-                body: {
-                    background: '#ffffff',
-                    color: '#1a1a1a'
-                }
+                bg: '#ffffff',
+                text: '#1a1a1a',
+                link: '#0066cc'
             },
             sepia: {
-                body: {
-                    background: '#f4ecd8',
-                    color: '#5c4b37'
-                }
+                bg: '#f4ecd8',
+                text: '#5c4b37',
+                link: '#8b4513'
             }
         };
 
-        const theme = themes[settings.theme] || themes.dark;
-        this.rendition.themes.default(theme);
+        const t = themes[activeTheme] || themes.dark;
+
+        // Apply comprehensive CSS that overrides book styles
+        this.rendition.themes.register('custom', {
+            'body': {
+                'background-color': `${t.bg} !important`,
+                'color': `${t.text} !important`
+            },
+            'body *': {
+                'color': `${t.text} !important`,
+                'background-color': 'transparent !important'
+            },
+            'p, div, span, h1, h2, h3, h4, h5, h6, li, td, th': {
+                'color': `${t.text} !important`
+            },
+            'a': {
+                'color': `${t.link} !important`
+            }
+        });
+        this.rendition.themes.select('custom');
 
         // Apply font size
         const fontSize = settings.fontSize || 100;
