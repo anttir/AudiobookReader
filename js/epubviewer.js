@@ -195,10 +195,16 @@ const EPUBViewer = {
         this.currentLocation = location;
 
         // Update progress display
-        if (this.book.locations && this.book.locations.length()) {
-            const percent = this.book.locations.percentageFromCfi(location.start.cfi);
-            document.getElementById('epub-location').textContent = `${Math.round(percent * 100)}%`;
-            document.getElementById('current-chapter').textContent = `${Math.round(percent * 100)}% luettu`;
+        try {
+            if (this.book && this.book.locations && this.book.locations.length()) {
+                const percent = this.book.locations.percentageFromCfi(location.start.cfi);
+                if (typeof percent === 'number' && !isNaN(percent)) {
+                    document.getElementById('epub-location').textContent = `${Math.round(percent * 100)}%`;
+                    document.getElementById('current-chapter').textContent = `${Math.round(percent * 100)}% luettu`;
+                }
+            }
+        } catch (e) {
+            console.warn('EPUB: Could not calculate percentage', e);
         }
 
         // Save progress
@@ -242,10 +248,15 @@ const EPUBViewer = {
         }
 
         let percentage = 0;
-        if (this.book && this.book.locations && this.book.locations.length()) {
-            percentage = Math.round(
-                this.book.locations.percentageFromCfi(this.currentLocation.start.cfi) * 100
-            );
+        try {
+            if (this.book && this.book.locations && this.book.locations.length()) {
+                const pct = this.book.locations.percentageFromCfi(this.currentLocation.start.cfi);
+                if (typeof pct === 'number' && !isNaN(pct)) {
+                    percentage = Math.round(pct * 100);
+                }
+            }
+        } catch (e) {
+            console.warn('EPUB: Could not calculate percentage for save', e);
         }
 
         const progressData = {

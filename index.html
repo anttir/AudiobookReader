@@ -145,9 +145,11 @@
         <div id="audio-player-container" class="player-container hidden">
             <!-- Loading overlay for audio -->
             <div id="audio-loading" class="audio-loading hidden">
-                <div class="audio-loader"></div>
                 <p id="audio-loading-text">Ladataan äänitiedostoa...</p>
-                <p id="audio-loading-size"></p>
+                <div class="progress-bar-container">
+                    <div id="audio-loading-bar" class="progress-bar"></div>
+                </div>
+                <p id="audio-loading-size">0%</p>
             </div>
 
             <div class="album-art">

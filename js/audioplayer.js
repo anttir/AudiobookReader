@@ -107,17 +107,37 @@ const AudioPlayer = {
     /**
      * Show loading overlay
      */
-    showLoading(show, text = 'Ladataan äänitiedostoa...', size = '') {
+    showLoading(show, text = 'Ladataan äänitiedostoa...') {
         const overlay = document.getElementById('audio-loading');
         const textEl = document.getElementById('audio-loading-text');
-        const sizeEl = document.getElementById('audio-loading-size');
 
         if (show) {
             overlay.classList.remove('hidden');
             textEl.textContent = text;
-            sizeEl.textContent = size;
+            this.updateLoadingProgress(0, 0);
         } else {
             overlay.classList.add('hidden');
+        }
+    },
+
+    /**
+     * Update loading progress bar
+     */
+    updateLoadingProgress(loaded, total) {
+        const barEl = document.getElementById('audio-loading-bar');
+        const sizeEl = document.getElementById('audio-loading-size');
+
+        if (total > 0) {
+            const percent = Math.round((loaded / total) * 100);
+            barEl.style.width = percent + '%';
+            sizeEl.textContent = `${percent}% (${this.formatSize(loaded)} / ${this.formatSize(total)})`;
+        } else if (loaded > 0) {
+            // Unknown total size, show loaded amount
+            barEl.style.width = '50%';
+            sizeEl.textContent = `${this.formatSize(loaded)}`;
+        } else {
+            barEl.style.width = '0%';
+            sizeEl.textContent = '0%';
         }
     },
 
@@ -162,11 +182,10 @@ const AudioPlayer = {
                 this.currentBlobUrl = null;
             }
 
-            // Download audio file as blob (this uses Authorization header properly)
-            const blob = await Drive.downloadFile(fileId);
-
-            // Update loading with file size
-            this.showLoading(true, 'Valmistellaan toistoa...', this.formatSize(blob.size));
+            // Download audio file with progress tracking
+            const blob = await Drive.downloadFileWithProgress(fileId, (loaded, total) => {
+                this.updateLoadingProgress(loaded, total);
+            });
 
             // Create blob URL
             this.currentBlobUrl = URL.createObjectURL(blob);

@@ -156,6 +156,54 @@ const Drive = {
     },
 
     /**
+     * Download file with progress callback
+     */
+    async downloadFileWithProgress(fileId, onProgress) {
+        const url = this.getDownloadUrl(fileId);
+        const token = Auth.getAccessToken();
+
+        const response = await fetch(url, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const contentLength = response.headers.get('content-length');
+        const total = contentLength ? parseInt(contentLength, 10) : 0;
+
+        if (!response.body) {
+            // Fallback if ReadableStream not supported
+            const blob = await response.blob();
+            if (onProgress) onProgress(blob.size, blob.size);
+            return blob;
+        }
+
+        const reader = response.body.getReader();
+        const chunks = [];
+        let loaded = 0;
+
+        while (true) {
+            const { done, value } = await reader.read();
+
+            if (done) break;
+
+            chunks.push(value);
+            loaded += value.length;
+
+            if (onProgress) {
+                onProgress(loaded, total);
+            }
+        }
+
+        const blob = new Blob(chunks);
+        return blob;
+    },
+
+    /**
      * Download file as ArrayBuffer (for PDF.js)
      */
     async downloadFileAsArrayBuffer(fileId) {
