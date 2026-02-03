@@ -271,6 +271,28 @@ const AudioPlayer = {
     },
 
     /**
+     * Stop playback completely (when leaving the book)
+     */
+    stop() {
+        this.saveProgress();
+        this.audio.pause();
+        this.audio.currentTime = 0;
+
+        // Clean up blob URL
+        if (this.currentBlobUrl) {
+            URL.revokeObjectURL(this.currentBlobUrl);
+            this.currentBlobUrl = null;
+        }
+
+        // Reset state
+        this.audio.src = '';
+        this.currentFileId = null;
+        this.currentIndex = 0;
+        this.playlist = [];
+        this.isPlaying = false;
+    },
+
+    /**
      * Toggle play/pause
      */
     togglePlayPause() {

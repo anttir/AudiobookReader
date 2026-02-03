@@ -87,6 +87,9 @@ const App = {
 
         // Reader controls
         document.getElementById('back-to-library').addEventListener('click', () => {
+            // Stop audio when leaving the book
+            AudioPlayer.stop();
+            this.currentBook = null;
             this.showScreen('library');
             this.hidePartsButton();
         });
