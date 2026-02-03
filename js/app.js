@@ -836,18 +836,36 @@ const App = {
     },
 
     /**
-     * Update mode toggle icon
+     * Update mode toggle icon and visibility
      */
     updateModeIcon() {
+        const toggleBtn = document.getElementById('toggle-mode');
         const readIcon = document.querySelector('.mode-icon-read');
         const listenIcon = document.querySelector('.mode-icon-listen');
 
-        if (this.currentMode === 'read') {
-            readIcon.classList.remove('hidden');
-            listenIcon.classList.add('hidden');
+        // Check if both formats exist
+        const hasAudio = this.currentBook?.audioFiles?.length > 0 || this.files?.audio?.length > 0;
+        const hasEbooks = this.currentBook?.ebooks?.length > 0 || this.files?.ebooks?.length > 0;
+        const hasBothFormats = hasAudio && hasEbooks;
+
+        // Show/hide the toggle button based on available formats
+        if (hasBothFormats) {
+            toggleBtn.classList.remove('hidden');
+            toggleBtn.style.opacity = '1';
+            toggleBtn.style.pointerEvents = 'auto';
         } else {
+            toggleBtn.classList.add('hidden');
+        }
+
+        // Update the icon based on current mode (shows what you'll switch TO)
+        if (this.currentMode === 'read') {
+            // Currently reading, show headphones icon (to switch to listen)
             readIcon.classList.add('hidden');
             listenIcon.classList.remove('hidden');
+        } else {
+            // Currently listening, show book icon (to switch to read)
+            readIcon.classList.remove('hidden');
+            listenIcon.classList.add('hidden');
         }
     },
 
