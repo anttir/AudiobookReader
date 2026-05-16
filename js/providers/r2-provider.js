@@ -159,8 +159,13 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
         return json;
     },
 
-    /** Convert a manifest entry into the normalised book + audio item. */
-    _manifestEntryToBook(entry) {
+    /**
+     * Convert a manifest entry into the normalised book + audio item.
+     * `index` is the entry's position in `manifest.books` and is surfaced
+     * as `_addedAt` so the library renderer can sort by "lisäysjärjestys"
+     * (manifest order = order books were added to the bucket).
+     */
+    _manifestEntryToBook(entry, index) {
         if (!entry?.id) return null;
 
         const isHls = entry.format === 'hls' && !!entry.playlist;
@@ -201,6 +206,9 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
             author: entry.author || null,
             narrator: entry.narrator || null,
             chapters: this._normaliseChapters(entry.chapters),
+            // Manifest index — used by the library renderer to sort by
+            // "lisäysjärjestys". Lower = added earlier.
+            _addedAt: typeof index === 'number' ? index : undefined,
         };
     },
 
@@ -236,7 +244,7 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
 
         const manifest = await this._fetchManifest();
         const books = (manifest.books || [])
-            .map(b => this._manifestEntryToBook(b))
+            .map((b, i) => this._manifestEntryToBook(b, i))
             .filter(Boolean);
 
         // Sort naturally by display name
