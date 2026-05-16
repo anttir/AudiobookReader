@@ -4,13 +4,23 @@
 
 const AudioPlayer = {
     audio: null,
-    playlist: [],
+    playlist: [],          // array of normalised items
     currentIndex: 0,
-    currentFileId: null,
-    currentBlobUrl: null,  // Store blob URL for cleanup
+    currentItem: null,     // the active item (replaces currentFileId)
+    currentBlobUrl: null,  // blob URL for cleanup (Drive playback)
+    hls: null,             // active hls.js instance (R2 / HLS playback)
     isPlaying: false,
     isLoading: false,
     updateInterval: null,
+    _hlsLoadingPromise: null,
+    // hls.js CDN — pinned version. Update intentionally; do not float to @latest.
+    HLS_JS_SRC: 'https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js',
+
+    /**
+     * Backwards-compatible alias: a few old call sites read `currentFileId`
+     * to compare against the active track. Keep it in sync with currentItem.
+     */
+    get currentFileId() { return this.currentItem?.key || null; },
 
     /**
      * Initialize the audio player
@@ -95,13 +105,29 @@ const AudioPlayer = {
     },
 
     /**
-     * Load playlist from files
+     * Load playlist from items (or, for backwards compat, raw Drive files).
+     * Items must carry sourceId + key + name; raw Drive files are normalised
+     * to drive: items.
      */
     setPlaylist(audioFiles) {
-        this.playlist = audioFiles.map(file => ({
-            id: file.id,
-            name: file.name
-        }));
+        this.playlist = (audioFiles || []).map(f => this._normaliseItem(f));
+    },
+
+    /** Coerce an input (item OR bare Drive file) into a normalised item. */
+    _normaliseItem(input) {
+        if (!input) return null;
+        if (input.sourceId && input.key) {
+            return input;
+        }
+        // Legacy Drive file shape (or audioFile with .id but no sourceId)
+        return {
+            sourceId: 'drive',
+            key: input.id,
+            name: input.name,
+            mimeType: input.mimeType,
+            // preserve legacy fields for any consumer that still reads them
+            id: input.id,
+        };
     },
 
     /**
@@ -151,59 +177,75 @@ const AudioPlayer = {
     },
 
     /**
-     * Load and play a specific file
+     * Load and play a track.
+     *
+     * Accepts a normalised item ({ sourceId, key, name, ... }) — for
+     * backwards compatibility a (fileId, fileName) pair is also accepted
+     * and treated as a Drive item.
      */
-    async loadTrack(fileId, fileName) {
+    async loadTrack(itemOrFileId, fileNameLegacy) {
         if (this.isLoading) return false;
 
-        this.isLoading = true;
-        this.currentFileId = fileId;
+        const item = (typeof itemOrFileId === 'string')
+            ? this._normaliseItem({ id: itemOrFileId, name: fileNameLegacy })
+            : this._normaliseItem(itemOrFileId);
 
-        // Find in playlist
-        const index = this.playlist.findIndex(t => t.id === fileId);
-        if (index !== -1) {
-            this.currentIndex = index;
+        if (!item) return false;
+
+        const provider = (typeof Providers !== 'undefined') ? Providers.get(item.sourceId) : null;
+        if (!provider) {
+            console.error('No provider for source:', item.sourceId);
+            App.showToast('Tuntematon lähde: ' + item.sourceId, 'error');
+            return false;
         }
 
-        // Update UI immediately
-        document.getElementById('audio-title').textContent = this.cleanFileName(fileName);
+        this.isLoading = true;
+        this.currentItem = item;
+
+        // Find in playlist by stable identity
+        const index = this.playlist.findIndex(t => t.sourceId === item.sourceId && t.key === item.key);
+        if (index !== -1) this.currentIndex = index;
+
+        const displayName = this.cleanFileName(item.name || '');
+        document.getElementById('audio-title').textContent = displayName;
         document.getElementById('audio-chapter').textContent = `Kappale ${this.currentIndex + 1} / ${this.playlist.length}`;
-        document.getElementById('current-book-title').textContent = this.cleanFileName(fileName);
+        document.getElementById('current-book-title').textContent = displayName;
         document.getElementById('current-time').textContent = '0:00';
         document.getElementById('duration').textContent = '';
 
-        // Show loading overlay
-        this.showLoading(true, 'Ladataan: ' + this.cleanFileName(fileName));
+        this.showLoading(true, 'Ladataan: ' + displayName);
 
         try {
-            // Clean up previous blob URL
-            if (this.currentBlobUrl) {
-                URL.revokeObjectURL(this.currentBlobUrl);
-                this.currentBlobUrl = null;
+            await this._teardownPlayback();
+
+            const isHls = provider.supportsHLS && provider.isHLSPlaylist(item);
+            if (isHls) {
+                await this._loadHls(provider, item);
+            } else if (provider.audioPlaybackMode === 'blob') {
+                await this._loadBlob(provider, item);
+            } else {
+                await this._loadDirect(provider, item);
             }
 
-            // Download audio file with progress tracking
-            const blob = await Drive.downloadFileWithProgress(fileId, (loaded, total) => {
-                this.updateLoadingProgress(loaded, total);
-            });
-
-            // Create blob URL
-            this.currentBlobUrl = URL.createObjectURL(blob);
-            this.audio.src = this.currentBlobUrl;
-
-            // Get saved progress
-            const progress = Storage.getBookProgress(fileId);
+            // Restore saved position
+            const progress = Storage.getBookProgress(item.sourceId, item.key);
             if (progress?.currentTime) {
-                this.audio.currentTime = progress.currentTime;
+                // For HLS the seek must wait until manifest is parsed; we
+                // queue it via a one-shot listener.
+                if (isHls && (!this.audio.duration || isNaN(this.audio.duration))) {
+                    const onReady = () => {
+                        this.audio.currentTime = progress.currentTime;
+                        this.audio.removeEventListener('loadedmetadata', onReady);
+                    };
+                    this.audio.addEventListener('loadedmetadata', onReady);
+                } else {
+                    this.audio.currentTime = progress.currentTime;
+                }
             }
 
-            // Update Media Session
-            this.updateMediaSession(fileName);
-
-            // Hide loading when ready to play
+            this.updateMediaSession(item.name || '');
             this.isLoading = false;
             this.showLoading(false);
-
             return true;
 
         } catch (error) {
@@ -213,6 +255,82 @@ const AudioPlayer = {
             App.showToast('Äänitiedoston lataaminen epäonnistui', 'error');
             return false;
         }
+    },
+
+    /** Cleanup HLS instance + blob URL before switching tracks. */
+    async _teardownPlayback() {
+        if (this.hls) {
+            try { this.hls.destroy(); } catch (e) { console.warn('hls.destroy failed:', e); }
+            this.hls = null;
+        }
+        if (this.currentBlobUrl) {
+            URL.revokeObjectURL(this.currentBlobUrl);
+            this.currentBlobUrl = null;
+        }
+        // Detach previous source so the audio element doesn't keep buffering it
+        this.audio.removeAttribute('src');
+        this.audio.load();
+    },
+
+    /** Blob playback (Google Drive): download then play. */
+    async _loadBlob(provider, item) {
+        const blob = await provider.downloadAsBlob(item, (loaded, total) => {
+            this.updateLoadingProgress(loaded, total);
+        });
+        this.currentBlobUrl = URL.createObjectURL(blob);
+        this.audio.src = this.currentBlobUrl;
+    },
+
+    /** Direct URL playback (R2 native audio over byte ranges). */
+    async _loadDirect(provider, item) {
+        const url = await provider.getStreamUrl(item);
+        this.audio.src = url;
+    },
+
+    /** HLS playback via hls.js. */
+    async _loadHls(provider, item) {
+        const url = await provider.getStreamUrl(item);
+        await this._ensureHlsLoaded();
+
+        if (window.Hls && window.Hls.isSupported()) {
+            this.hls = new window.Hls({
+                // audio-only HLS — keep buffer modest, start fast
+                maxBufferLength: 30,
+                maxMaxBufferLength: 60,
+                lowLatencyMode: false,
+            });
+            this.hls.on(window.Hls.Events.ERROR, (_event, data) => {
+                if (data.fatal) {
+                    console.error('HLS fatal error:', data);
+                    App.showToast('HLS-virhe: ' + (data.details || 'tuntematon'), 'error');
+                }
+            });
+            this.hls.loadSource(url);
+            this.hls.attachMedia(this.audio);
+        } else if (this.audio.canPlayType('application/vnd.apple.mpegurl')) {
+            // Safari has native HLS
+            this.audio.src = url;
+        } else {
+            throw new Error('HLS-toistoa ei tueta tässä selaimessa');
+        }
+    },
+
+    /** Lazy-load hls.js once. Concurrent calls share the same promise. */
+    _ensureHlsLoaded() {
+        if (window.Hls) return Promise.resolve();
+        if (this._hlsLoadingPromise) return this._hlsLoadingPromise;
+        this._hlsLoadingPromise = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = this.HLS_JS_SRC;
+            script.async = true;
+            script.onload = () => resolve();
+            script.onerror = () => {
+                this._hlsLoadingPromise = null;
+                reject(new Error('hls.js failed to load'));
+            };
+            document.head.appendChild(script);
+        });
+        return this._hlsLoadingPromise;
     },
 
     /**
@@ -278,15 +396,20 @@ const AudioPlayer = {
         this.audio.pause();
         this.audio.currentTime = 0;
 
-        // Clean up blob URL
+        // Tear down both blob and HLS resources
+        if (this.hls) {
+            try { this.hls.destroy(); } catch (e) { console.warn('hls.destroy failed:', e); }
+            this.hls = null;
+        }
         if (this.currentBlobUrl) {
             URL.revokeObjectURL(this.currentBlobUrl);
             this.currentBlobUrl = null;
         }
 
         // Reset state
-        this.audio.src = '';
-        this.currentFileId = null;
+        this.audio.removeAttribute('src');
+        this.audio.load();
+        this.currentItem = null;
         this.currentIndex = 0;
         this.playlist = [];
         this.isPlaying = false;
@@ -323,8 +446,7 @@ const AudioPlayer = {
             this.audio.currentTime = 0;
         } else if (this.currentIndex > 0) {
             this.currentIndex--;
-            const track = this.playlist[this.currentIndex];
-            this.loadTrack(track.id, track.name);
+            this.loadTrack(this.playlist[this.currentIndex]);
         }
     },
 
@@ -334,8 +456,7 @@ const AudioPlayer = {
     nextTrack() {
         if (this.currentIndex < this.playlist.length - 1) {
             this.currentIndex++;
-            const track = this.playlist[this.currentIndex];
-            this.loadTrack(track.id, track.name);
+            this.loadTrack(this.playlist[this.currentIndex]);
         }
     },
 
@@ -458,13 +579,13 @@ const AudioPlayer = {
      * Save playback progress
      */
     saveProgress() {
-        if (!this.currentFileId) return;
+        if (!this.currentItem) return;
 
         const current = this.audio.currentTime;
         const duration = this.audio.duration;
 
         if (!isNaN(duration) && duration > 0) {
-            Storage.setBookProgress(this.currentFileId, {
+            Storage.setBookProgress(this.currentItem.sourceId, this.currentItem.key, {
                 currentTime: current,
                 duration: duration,
                 percentage: Math.round((current / duration) * 100)
@@ -501,13 +622,18 @@ const AudioPlayer = {
      */
     destroy() {
         this.pause();
+        if (this.hls) {
+            try { this.hls.destroy(); } catch (e) { /* ignore */ }
+            this.hls = null;
+        }
         if (this.currentBlobUrl) {
             URL.revokeObjectURL(this.currentBlobUrl);
             this.currentBlobUrl = null;
         }
-        this.audio.src = '';
+        this.audio.removeAttribute('src');
+        this.audio.load();
         this.playlist = [];
         this.currentIndex = 0;
-        this.currentFileId = null;
+        this.currentItem = null;
     }
 };
