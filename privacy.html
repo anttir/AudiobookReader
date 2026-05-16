@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tietosuojaseloste — AudioBook Reader</title>
+    <meta name="theme-color" content="#1a1a2e">
+    <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+    <link rel="stylesheet" href="css/legal.css">
+</head>
+<body>
+    <div class="page">
+        <header class="page-header">
+            <img src="assets/icon-1024.png" alt="AudioBook Reader -logo">
+            <div>
+                <h1>Tietosuojaseloste</h1>
+                <p>AudioBook Reader</p>
+            </div>
+        </header>
+
+        <main>
+            <p class="meta">Voimassa: 17.5.2026</p>
+
+            <h2>1. Lyhyesti</h2>
+            <p>
+                AudioBook Reader on selainpohjainen sovellus, jolla käyttäjä lukee
+                ja kuuntelee omia kirjojaan oman Google Drive -tilinsä takaa.
+                Sovellus toimii kokonaan selaimessa eikä lähetä käyttäjän
+                tiedostoja, sisältöä tai lukukohtaa omille palvelimilleen.
+            </p>
+
+            <h2>2. Rekisterinpitäjä</h2>
+            <p>
+                Antti Rasi —
+                <a href="mailto:antti.rasi@gmail.com">antti.rasi@gmail.com</a>
+            </p>
+
+            <h2>3. Mitä tietoja kerätään</h2>
+            <p>
+                Kirjautuessasi Google-tilillä sovellus saa Googlelta:
+            </p>
+            <ul>
+                <li>Nimesi, sähköpostiosoitteesi ja profiilikuvasi (näytetään
+                    sovelluksen yläkulmassa).</li>
+                <li>Pääsyn niihin Google Drive -tiedostoihin ja -kansioihin, jotka
+                    valitset Google Pickerin kautta (scope <code>drive.file</code>).
+                    Sovellus ei näe muita Drive-tiedostojasi.</li>
+                <li>Pääsyn omaan, sovelluskohtaiseen <em>appdata</em>-kansioon
+                    Drivessasi (scope <code>drive.appdata</code>). Tämän
+                    kansion näkee vain tämä sovellus eikä se näy sinulle Driven
+                    selaimessa.</li>
+            </ul>
+
+            <h2>4. Mihin tietoja käytetään</h2>
+            <ul>
+                <li>Profiilitietoja käytetään ainoastaan käyttäjän tunnistamiseen
+                    sovelluksen sisällä (näytetään käyttäjälle itselleen).</li>
+                <li>Drive-tiedostoja luetaan vain valitun kirjan näyttämistä ja
+                    toistoa varten — sisältöä ei kopioida muualle.</li>
+                <li>Appdata-kansioon tallennetaan kirjojen lukukohdat, jotta voit
+                    jatkaa toiselta laitteelta samasta paikasta. Tieto ei sisällä
+                    tiedostojen sisältöä.</li>
+            </ul>
+
+            <h2>5. Missä tieto sijaitsee</h2>
+            <ul>
+                <li><strong>Selaimesi paikallinen muisti</strong> (<code>localStorage</code>):
+                    asetukset (teema, fonttikoko, jne.), kirjautumisistunnon
+                    voimassaoleva token sekä lukukohtien välimuisti.</li>
+                <li><strong>Sinun oma Google Drive</strong>: appdata-kansiossa oleva
+                    pieni JSON-tiedosto, johon lukukohdat synkronoidaan.</li>
+                <li><strong>Sovelluksen ylläpitäjän hallinnoima Cloudflare R2 -säilytys</strong>
+                    (valinnainen lähde): jos käytät R2-kirjastoa, äänitiedostot
+                    luetaan auth-välityspalvelimen kautta. Pyyntöjen yhteydessä
+                    välitetään Googlen access token, jota palvelin käyttää vain
+                    pyytäjän sähköpostin tarkistamiseen sallittuja vastaan.
+                    Tunnus ei tallennu palvelimelle pidempään kuin 5 minuutin
+                    välimuistin verran.</li>
+            </ul>
+
+            <h2>6. Tietojen jakaminen</h2>
+            <p>
+                Sovellus ei jaa tietoja kolmansille osapuolille, ei käytä
+                mainosjärjestelmiä eikä analytiikkaa. Ainoat ulkopuoliset palvelut,
+                joiden kanssa sovellus tekee suoraa pyyntöä, ovat Google
+                (kirjautuminen, Drive API) sekä mainittu R2-välityspalvelin
+                niillä, jotka R2-lähdettä käyttävät.
+            </p>
+
+            <h2>7. Käyttäjän oikeudet</h2>
+            <ul>
+                <li>Voit milloin tahansa kirjautua ulos sovelluksesta — paikallinen
+                    token tyhjenee.</li>
+                <li>Voit peruuttaa sovelluksen pääsyn Google-tiliisi osoitteessa
+                    <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a>.</li>
+                <li>Voit tyhjentää paikalliset asetukset ja välimuistin selaimen
+                    asetuksista (Site data → Clear).</li>
+                <li>Drive-appdata-tiedoston voit poistaa kytkemällä sovelluksen irti
+                    Google-tilistä (yllä) — tällöin appdata-tiedosto poistuu
+                    automaattisesti.</li>
+            </ul>
+
+            <h2>8. Evästeet</h2>
+            <p>
+                Sovellus ei käytä omia evästeitä. Google Identity Services ja
+                Google Picker voivat asettaa omia evästeitään niiden omien
+                tietosuojakäytäntöjensä mukaisesti.</p>
+
+            <h2>9. Muutokset</h2>
+            <p>
+                Tätä selostetta päivitetään tarvittaessa. Päivitetty versio
+                julkaistaan tällä samalla sivulla, ja "Voimassa"-päivämäärä
+                muutetaan vastaamaan muutosta.
+            </p>
+
+            <h2>10. Yhteystieto</h2>
+            <p>
+                Kysymykset ja pyynnöt:
+                <a href="mailto:antti.rasi@gmail.com">antti.rasi@gmail.com</a>
+            </p>
+        </main>
+
+        <footer>
+            <a href="./">Sovellus</a>
+            <a href="home.html">Etusivu</a>
+            <a href="terms.html">Käyttöehdot</a>
+            <a href="mailto:antti.rasi@gmail.com">Yhteys</a>
+        </footer>
+    </div>
+</body>
+</html>
