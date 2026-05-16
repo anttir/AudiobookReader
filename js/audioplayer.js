@@ -16,6 +16,7 @@ const AudioPlayer = {
     _hlsRecoveryAttempts: 0,
     _currentChapterIndex: -1,
     _bgLockAbort: null,
+    _authRefreshAttempted: false,
     // hls.js CDN — pinned version. Update intentionally; do not float to @latest.
     HLS_JS_SRC: 'https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js',
 
@@ -307,6 +308,37 @@ const AudioPlayer = {
     },
 
     /**
+     * R2 auth-worker rejected our token (401/403). Try a silent token
+     * refresh and reload the source — the user shouldn't have to click
+     * "Sign in" every hour. Fall back to the toast only when the refresh
+     * itself fails (genuine sign-out / revoked consent).
+     *
+     * Guarded so we don't loop: one refresh attempt per loaded track.
+     */
+    async _handleAuthError() {
+        if (this._authRefreshAttempted || !this.currentItem) {
+            App.showToast('R2: kirjautuminen vanhentui, kirjaudu uudelleen', 'error');
+            return;
+        }
+        this._authRefreshAttempted = true;
+        try {
+            if (typeof Auth === 'undefined' || !Auth.refreshToken) {
+                throw new Error('Auth.refreshToken unavailable');
+            }
+            console.info('HLS auth error — attempting silent token refresh');
+            await Auth.refreshToken();
+            // Re-arm hls.js with the new token. Easiest is to fully
+            // reload the source; preserves currentTime via the same
+            // progress-restore path loadTrack uses.
+            const item = this.currentItem;
+            await this.loadTrack(item);
+        } catch (err) {
+            console.warn('Silent token refresh failed:', err);
+            App.showToast('R2: kirjautuminen vanhentui, kirjaudu uudelleen', 'error');
+        }
+    },
+
+    /**
      * Nudge playback when the audio element has stalled. Called from
      * waiting/stalled/visibilitychange. Asks hls.js to keep loading and
      * re-starts the audio element if it was paused implicitly by the
@@ -392,20 +424,24 @@ const AudioPlayer = {
             });
             // Reset the recovery counter every time a fragment actually
             // loads — three transient stalls in a row counts as fatal, but
-            // three stalls spread across an hour shouldn't.
+            // three stalls spread across an hour shouldn't. Same logic
+            // for the auth-refresh guard: any successful segment fetch
+            // proves the current token works.
             this._hlsRecoveryAttempts = 0;
             this.hls.on(window.Hls.Events.FRAG_LOADED, () => {
                 this._hlsRecoveryAttempts = 0;
+                this._authRefreshAttempted = false;
             });
             this.hls.on(window.Hls.Events.ERROR, (_event, data) => {
                 if (!data.fatal) return;
                 console.error('HLS fatal error:', data);
-                // Surface auth failures with a clearer message — most often
-                // a stale token (>1h since sign-in). No auto-recovery
-                // possible without re-auth, so bail.
                 const status = data.response?.code;
+                // 401/403 = expired/missing Google token at the
+                // auth-worker. Try a silent refresh + reload before
+                // bothering the user — they shouldn't have to click
+                // "Sign in" every hour just to keep listening.
                 if (status === 401 || status === 403) {
-                    App.showToast('R2: kirjautuminen vanhentui, kirjaudu uudelleen', 'error');
+                    this._handleAuthError();
                     return;
                 }
                 // For other fatal errors (most commonly a flaky mobile
