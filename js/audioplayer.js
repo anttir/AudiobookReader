@@ -414,12 +414,28 @@ const AudioPlayer = {
                 // Suppressed when the URL is a public pub-*.r2.dev bucket —
                 // its CORS rules don't allow the Authorization header, so
                 // sending it would break the preflight.
+                //
+                // hls.js@1.5+ picks FetchLoader by default; xhrSetup only
+                // fires on the XHR path. Set both so the header is sent
+                // regardless of which loader is active.
                 xhrSetup: function (xhr, requestUrl) {
                     if (typeof Auth === 'undefined') return;
                     const token = Auth.getAccessToken?.();
                     if (!token) return;
                     if (/\/\/pub-[0-9a-f]+\.r2\.dev/i.test(requestUrl)) return;
                     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                },
+                fetchSetup: function (context, initParams) {
+                    if (typeof Auth !== 'undefined'
+                        && !/\/\/pub-[0-9a-f]+\.r2\.dev/i.test(context.url)) {
+                        const token = Auth.getAccessToken?.();
+                        if (token) {
+                            const headers = new Headers(initParams.headers || {});
+                            headers.set('Authorization', `Bearer ${token}`);
+                            initParams.headers = headers;
+                        }
+                    }
+                    return new Request(context.url, initParams);
                 },
             });
             // Reset the recovery counter every time a fragment actually
