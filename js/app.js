@@ -320,7 +320,19 @@ const App = {
             // Always try to load the active provider's library (R2 needs no
             // folder; Drive needs a saved one).
             this.loadLibrary();
+
+            // Best-effort: pull cross-device listening progress from
+            // Drive's appData folder. Re-renders the "Continue listening"
+            // card if a newer position came from another device.
+            if (typeof Sync !== 'undefined') {
+                Sync.init().then(() => {
+                    // Refresh library so "Jatka lukemista" picks up any
+                    // merged-in progress from other devices.
+                    this.renderLibrary?.();
+                });
+            }
         } else {
+            if (typeof Sync !== 'undefined') Sync.reset();
             this.showScreen('login');
         }
     },

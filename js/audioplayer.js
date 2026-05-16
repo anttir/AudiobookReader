@@ -15,6 +15,7 @@ const AudioPlayer = {
     _hlsLoadingPromise: null,
     _hlsRecoveryAttempts: 0,
     _currentChapterIndex: -1,
+    _bgLockAbort: null,
     // hls.js CDN — pinned version. Update intentionally; do not float to @latest.
     HLS_JS_SRC: 'https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js',
 
@@ -36,11 +37,21 @@ const AudioPlayer = {
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
                 this.saveProgress();
+                // Don't wait for the 30s debounce — push the current
+                // position to Drive immediately so the other device
+                // picks it up next time it loads.
+                if (typeof Sync !== 'undefined') Sync.flushUpload();
+            } else if (document.visibilityState === 'visible') {
+                // Tab is back in foreground — Chrome de-throttles timers
+                // here, but if we stalled while hidden the audio element
+                // may need a kick to resume.
+                this._nudgeBuffer('visible-again');
             }
         });
 
         window.addEventListener('beforeunload', () => {
             this.saveProgress();
+            if (typeof Sync !== 'undefined') Sync.flushUpload();
         });
     },
 
@@ -56,6 +67,12 @@ const AudioPlayer = {
         this.audio.addEventListener('pause', () => this.onPause());
         this.audio.addEventListener('error', (e) => this.onError(e));
         this.audio.addEventListener('canplay', () => this.onCanPlay());
+
+        // Background-tab resilience: when the audio element stalls (Chrome
+        // throttles segment loads for hidden tabs), poke hls.js to resume
+        // loading rather than waiting for the timer to catch up.
+        this.audio.addEventListener('waiting', () => this._nudgeBuffer('waiting'));
+        this.audio.addEventListener('stalled', () => this._nudgeBuffer('stalled'));
 
         // Control buttons
         document.getElementById('play-pause').addEventListener('click', () => this.togglePlayPause());
@@ -289,6 +306,25 @@ const AudioPlayer = {
         }
     },
 
+    /**
+     * Nudge playback when the audio element has stalled. Called from
+     * waiting/stalled/visibilitychange. Asks hls.js to keep loading and
+     * re-starts the audio element if it was paused implicitly by the
+     * stall.
+     */
+    _nudgeBuffer(reason) {
+        if (!this.currentItem) return;
+        if (this.hls) {
+            try { this.hls.startLoad(); } catch (e) { console.warn('startLoad failed:', e); }
+        }
+        // If we were supposed to be playing but the element paused
+        // itself (Chrome does this after long stalls), restart it.
+        if (this.isPlaying && this.audio.paused) {
+            console.warn(`Audio stalled (${reason}); resuming playback`);
+            this.audio.play().catch(err => console.warn('Resume after stall failed:', err));
+        }
+    },
+
     /** Cleanup HLS instance + blob URL before switching tracks. */
     async _teardownPlayback() {
         if (this.hls) {
@@ -326,9 +362,20 @@ const AudioPlayer = {
 
         if (window.Hls && window.Hls.isSupported()) {
             this.hls = new window.Hls({
-                // audio-only HLS — keep buffer modest, start fast
-                maxBufferLength: 30,
-                maxMaxBufferLength: 60,
+                // Audio-only HLS. Buffers are *deliberately* large: when a
+                // Chrome tab goes to background, setTimeout throttles to
+                // ~1 Hz after 5 min and the JS-side fragment scheduler
+                // struggles to keep up with a small buffer. Pre-loading
+                // ~10 min ahead means even a heavily throttled timer can
+                // top up faster than the playhead consumes audio.
+                // (Memory cost ≈ 1 MB / min at ~128 kbps — fine.)
+                maxBufferLength: 120,
+                maxMaxBufferLength: 600,
+                // Keep some played audio in buffer for instant rewind.
+                backBufferLength: 90,
+                // Forward bytes to MSE as they arrive instead of waiting
+                // for full segments — smooths out slow networks.
+                progressive: true,
                 lowLatencyMode: false,
                 // Forward the Google access token on every HLS request so
                 // the optional r2-auth-worker proxy can authorise it.
@@ -723,6 +770,7 @@ const AudioPlayer = {
     onPlay() {
         this.isPlaying = true;
         this.updatePlayButton();
+        this._acquireBackgroundLock();
     },
 
     /**
@@ -732,6 +780,32 @@ const AudioPlayer = {
         this.isPlaying = false;
         this.updatePlayButton();
         this.saveProgress();
+        // User paused — likely about to walk away from this device; push
+        // the position so the next device can pick up exactly there.
+        if (typeof Sync !== 'undefined') Sync.flushUpload();
+        this._releaseBackgroundLock();
+    },
+
+    /**
+     * Hold a navigator.locks lock while playing. Chrome's intensive
+     * timer-throttling docs explicitly exempt tabs holding a Web Lock,
+     * which keeps hls.js's segment scheduler responsive in background.
+     * Quietly no-op when the API isn't available (older browsers).
+     */
+    _acquireBackgroundLock() {
+        if (!navigator.locks?.request) return;
+        if (this._bgLockAbort) return;
+        const abort = new AbortController();
+        this._bgLockAbort = abort;
+        navigator.locks
+            .request('audiobook-playback', { signal: abort.signal }, () => new Promise(() => {}))
+            .catch(() => { /* AbortError on release is expected */ });
+    },
+
+    _releaseBackgroundLock() {
+        if (!this._bgLockAbort) return;
+        this._bgLockAbort.abort();
+        this._bgLockAbort = null;
     },
 
     /**
@@ -792,6 +866,8 @@ const AudioPlayer = {
                 duration: duration,
                 percentage: Math.round((current / duration) * 100)
             });
+            // Cross-device sync via Drive appData (debounced inside Sync)
+            if (typeof Sync !== 'undefined') Sync.scheduleUpload();
         }
     },
 
