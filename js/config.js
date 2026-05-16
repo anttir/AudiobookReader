@@ -15,13 +15,15 @@ const CONFIG = {
     GOOGLE_API_KEY: 'AIzaSyDSim0N9T9HFinPha7KoQcUgkY9muTECTE',
 
     // Google Drive API scopes.
-    // - drive.readonly: pick + read book files from the user's Drive
+    // - drive.file: per-file/folder access for items the user picks via
+    //   Google Picker (or that the app creates). Non-sensitive scope —
+    //   no Google verification needed to publish the OAuth app.
     // - drive.appdata: private per-app folder used by Sync to store
     //   listening progress across devices (invisible to the user via
     //   the Drive UI, only this app sees it)
     // - userinfo.*: profile + email for the sign-in UI
     SCOPES: [
-        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive.appdata',
         'https://www.googleapis.com/auth/userinfo.profile',
         'https://www.googleapis.com/auth/userinfo.email'

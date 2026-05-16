@@ -401,6 +401,68 @@ const DriveProvider = Object.assign(Object.create(ProviderBase), {
     async downloadAsArrayBuffer(item) {
         return this.downloadFileAsArrayBuffer(item.key);
     },
+
+    // --- Google Picker (drive.file folder selection) ---------------------
+
+    _pickerApiLoaded: false,
+
+    async _ensurePickerApi() {
+        if (this._pickerApiLoaded) return;
+        if (typeof gapi === 'undefined') {
+            throw new Error('Google API client ei latautunut');
+        }
+        await new Promise((resolve, reject) => {
+            gapi.load('picker', {
+                callback: resolve,
+                onerror: reject,
+                timeout: 20000,
+                ontimeout: () => reject(new Error('Picker API -lataus aikakatkaistu')),
+            });
+        });
+        this._pickerApiLoaded = true;
+    },
+
+    /**
+     * Open the Google Picker so the user can grant the app access to a
+     * specific folder. With drive.file scope this is the only way to
+     * obtain readable folder IDs — the app can't list arbitrary folders.
+     * Resolves with { id, name } on pick, or null on cancel.
+     */
+    async pickFolder() {
+        await this._ensurePickerApi();
+
+        const token = Auth.getAccessToken();
+        if (!token) throw new Error('Ei kirjautunut sisään');
+
+        // App ID = project number prefix of the OAuth client ID
+        const appId = (CONFIG.GOOGLE_CLIENT_ID || '').split('-')[0];
+
+        return new Promise((resolve) => {
+            const view = new google.picker.DocsView()
+                .setIncludeFolders(true)
+                .setSelectFolderEnabled(true)
+                .setMimeTypes('application/vnd.google-apps.folder');
+
+            const picker = new google.picker.PickerBuilder()
+                .setTitle('Valitse kirjojen kansio')
+                .setOAuthToken(token)
+                .setDeveloperKey(CONFIG.GOOGLE_API_KEY)
+                .setAppId(appId)
+                .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
+                .addView(view)
+                .setCallback((data) => {
+                    const action = data[google.picker.Response.ACTION];
+                    if (action === google.picker.Action.PICKED) {
+                        const doc = data[google.picker.Response.DOCUMENTS]?.[0];
+                        resolve(doc ? { id: doc.id, name: doc.name } : null);
+                    } else if (action === google.picker.Action.CANCEL) {
+                        resolve(null);
+                    }
+                })
+                .build();
+            picker.setVisible(true);
+        });
+    },
 });
 
 // Legacy global alias so the untouched pdf/epub viewers continue to work.

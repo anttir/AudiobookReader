@@ -12,6 +12,9 @@
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 
+    <!-- Google API client (loads google.picker for folder selection) -->
+    <script src="https://apis.google.com/js/api.js"></script>
+
     <!-- PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf_viewer.min.css">
@@ -334,33 +337,6 @@
                         <button id="zoom-fit" class="secondary-btn">Sovita</button>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- File Picker (Google Drive) -->
-    <div id="file-picker-modal" class="modal hidden">
-        <div class="modal-content large">
-            <div class="modal-header">
-                <button id="picker-back" class="icon-btn hidden">
-                    <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
-                </button>
-                <h3 id="picker-title">Valitse kansio</h3>
-                <button id="close-picker" class="icon-btn">
-                    <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div id="picker-content" class="picker-content">
-                    <div class="picker-loading">
-                        <div class="loader"></div>
-                        <p>Ladataan...</p>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button id="picker-cancel" class="secondary-btn">Peruuta</button>
-                <button id="picker-select" class="primary-btn" disabled>Valitse tämä kansio</button>
             </div>
         </div>
     </div>
