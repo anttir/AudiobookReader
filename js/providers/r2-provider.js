@@ -1,30 +1,207 @@
 /**
- * Cloudflare R2 Storage Provider — stub.
+ * Cloudflare R2 Storage Provider
  *
- * The full implementation lands in the next commit. We register the stub now
- * so the index.html script load doesn't 404 and the registry can resolve the
- * provider when the UI starts showing the source selector.
+ * Books on R2 live behind a public access URL (e.g. `https://pub-<hash>.r2.dev`
+ * or a custom domain). The `pub-*.r2.dev` URL is GET-only — it does NOT expose
+ * S3-style LIST — so the provider relies on a manifest file at the bucket root:
+ *
+ *   <baseUrl>/index.json
+ *
+ *   {
+ *     "version": 1,
+ *     "books": [
+ *       {
+ *         "id":       "stoneheart",                       // unique, also the book prefix
+ *         "name":     "Stoneheart",
+ *         "format":   "hls" | "native",
+ *         "playlist": "stoneheart/playlist.m3u8",         // required if format=hls
+ *         "audioFile":"stoneheart/audiobook.m4a",         // required if format=native
+ *         "cover":    "stoneheart/cover.jpg",             // optional
+ *         "duration": 36854.2                             // optional, seconds
+ *       }
+ *     ]
+ *   }
+ *
+ * Progress is stored under `r2:<bookId>` — one entry per book — regardless of
+ * whether the book is an HLS playlist or a single native file.
  */
 
 const R2Provider = Object.assign(Object.create(ProviderBase), {
     id: 'r2',
     displayName: 'Cloudflare R2',
-    icon: `<svg viewBox="0 0 24 24"><path fill="#f6821f" d="M16.5 16.5L13 12l3.5-4.5h-9L4 12l3.5 4.5z"/><path fill="#faae40" d="M20 12l-3.5-4.5L13 12l3.5 4.5z"/></svg>`,
+    icon: `<svg viewBox="0 0 24 24"><path fill="#f6821f" d="M14.5 8H9.7c-2 0-3.7 1.4-4.1 3.2C4 11.5 3 12.8 3 14.3 3 16 4.3 17.3 6 17.3h8.5c2.2 0 4-1.8 4-4S16.7 9.3 14.5 8z"/><path fill="#ffd166" d="M21 12.5c0 1.7-1.3 3-3 3h-3.5c1.4-.5 2.5-1.6 3-3 .3-1 .2-2 -.2-2.9.4-.4.9-.6 1.5-.6 1.2 0 2.2 1 2.2 2.2v1.3z"/></svg>`,
     supportsHLS: true,
     supportsByteRange: true,
     audioPlaybackMode: 'direct',
     supportsBrowsing: false,
 
-    isConfigured() { return false; },        // not yet configurable
-    isAuthenticated() { return true; },      // public bucket, no auth needed
+    // localStorage key for the user's R2 configuration. Kept separate from
+    // CONFIG.STORAGE_KEYS because R2 config is mutable user data, not a
+    // frozen build-time constant.
+    R2_CONFIG_KEY: 'audiobook_r2_config',
+    R2_INDEX_PATH: 'index.json',
+
+    // --- configuration -----------------------------------------------------
+
+    getConfig() {
+        return Storage.get(this.R2_CONFIG_KEY) || null;
+    },
+
+    setConfig(config) {
+        if (!config?.baseUrl) throw new Error('R2 config requires baseUrl');
+        // Trim trailing slash + whitespace
+        const normalised = {
+            baseUrl: String(config.baseUrl).trim().replace(/\/+$/, ''),
+            label: config.label || null,
+        };
+        return Storage.set(this.R2_CONFIG_KEY, normalised);
+    },
+
+    clearConfig() {
+        return Storage.remove(this.R2_CONFIG_KEY);
+    },
+
+    isConfigured() {
+        const c = this.getConfig();
+        return !!(c && c.baseUrl);
+    },
+
+    isAuthenticated() { return true; },     // public bucket
     needsAuth() { return false; },
 
-    async getLibraryStructure(_folderId) {
+    // --- url helpers -------------------------------------------------------
+
+    _baseUrl() {
+        const c = this.getConfig();
+        if (!c?.baseUrl) throw new Error('R2 is not configured');
+        return c.baseUrl;
+    },
+
+    _absUrl(key) {
+        if (!key) return null;
+        return `${this._baseUrl()}/${String(key).replace(/^\/+/, '')}`;
+    },
+
+    // --- manifest ----------------------------------------------------------
+
+    async _fetchManifest() {
+        const url = this._absUrl(this.R2_INDEX_PATH);
+        // cache: 'no-cache' so book additions surface without forcing the user
+        // to hard-refresh; the file is small.
+        const resp = await fetch(url, { cache: 'no-cache' });
+        if (!resp.ok) {
+            throw new Error(`R2 manifest fetch failed (${resp.status}). URL: ${url}`);
+        }
+        const json = await resp.json();
+        if (!Array.isArray(json?.books)) {
+            throw new Error('R2 manifest is malformed: expected { books: [] }');
+        }
+        return json;
+    },
+
+    /** Convert a manifest entry into the normalised book + audio item. */
+    _manifestEntryToBook(entry) {
+        if (!entry?.id) return null;
+
+        const isHls = entry.format === 'hls' && !!entry.playlist;
+        const audioKey = isHls ? entry.playlist : entry.audioFile;
+        const audioName = audioKey
+            ? String(audioKey).split('/').pop()
+            : entry.name;
+        const progressKey = `r2:${entry.id}`;
+
+        const audioFiles = audioKey ? [{
+            sourceId: 'r2',
+            key: audioKey,
+            name: audioName,
+            mimeType: isHls ? 'application/vnd.apple.mpegurl' : undefined,
+            isFolder: false,
+            isPlaylist: isHls,
+            progressKey,
+            // legacy id kept so existing comparisons (file.id === ...) still work
+            id: `${entry.id}:audio`,
+        }] : [];
+
         return {
             sourceId: 'r2',
+            id: entry.id,
+            name: entry.name || entry.id,
+            isBook: true,
+            isMultiPart: false,
+            primaryType: 'audio',
+            format: isHls ? 'hls' : 'native',
+            ebooks: [],
+            audioFiles,
+            ebookCount: 0,
+            audioCount: audioFiles.length,
+            cover: entry.cover ? this._absUrl(entry.cover) : null,
+            duration: entry.duration,
+            progressKey,
+        };
+    },
+
+    // --- library -----------------------------------------------------------
+
+    async getLibraryStructure(_folderId) {
+        const empty = {
+            sourceId: 'r2',
+            folderId: null,
             books: [],
             standaloneFiles: { ebooks: [], audio: [] },
             folders: [],
         };
+        if (!this.isConfigured()) return empty;
+
+        const manifest = await this._fetchManifest();
+        const books = (manifest.books || [])
+            .map(b => this._manifestEntryToBook(b))
+            .filter(Boolean);
+
+        // Sort naturally by display name
+        books.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+        return { ...empty, books };
+    },
+
+    async listFolders(_parentId) {
+        return [];                          // R2 has no nested folder UI
+    },
+
+    // --- playback ----------------------------------------------------------
+
+    async getStreamUrl(item) {
+        return this._absUrl(item.key);
+    },
+
+    async downloadAsBlob(item, onProgress) {
+        const url = this._absUrl(item.key);
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`R2 fetch failed: ${resp.status}`);
+
+        const contentLength = resp.headers.get('content-length');
+        const total = contentLength ? parseInt(contentLength, 10) : 0;
+
+        if (!resp.body) {
+            const blob = await resp.blob();
+            if (onProgress) onProgress(blob.size, blob.size);
+            return blob;
+        }
+
+        const reader = resp.body.getReader();
+        const chunks = [];
+        let loaded = 0;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            loaded += value.length;
+            if (onProgress) onProgress(loaded, total);
+        }
+        return new Blob(chunks);
+    },
+
+    async downloadAsArrayBuffer(item) {
+        const blob = await this.downloadAsBlob(item);
+        return blob.arrayBuffer();
     },
 });

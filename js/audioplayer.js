@@ -227,8 +227,11 @@ const AudioPlayer = {
                 await this._loadDirect(provider, item);
             }
 
-            // Restore saved position
-            const progress = Storage.getBookProgress(item.sourceId, item.key);
+            // Restore saved position. Prefer the item's explicit
+            // progressKey so HLS books save under their book id instead of
+            // the playlist-file key.
+            const pKey = item.progressKey || `${item.sourceId}:${item.key}`;
+            const progress = Storage.getBookProgress(pKey);
             if (progress?.currentTime) {
                 // For HLS the seek must wait until manifest is parsed; we
                 // queue it via a one-shot listener.
@@ -585,7 +588,9 @@ const AudioPlayer = {
         const duration = this.audio.duration;
 
         if (!isNaN(duration) && duration > 0) {
-            Storage.setBookProgress(this.currentItem.sourceId, this.currentItem.key, {
+            const pKey = this.currentItem.progressKey
+                || `${this.currentItem.sourceId}:${this.currentItem.key}`;
+            Storage.setBookProgress(pKey, {
                 currentTime: current,
                 duration: duration,
                 percentage: Math.round((current / duration) * 100)
