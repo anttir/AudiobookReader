@@ -2,6 +2,21 @@
  * Main Application - AudioBook Reader
  */
 
+/**
+ * Library sort options shown in the dropdown above the book lists.
+ * `value` is persisted in Storage.getSettings().librarySort; `label` is the
+ * Finnish text rendered in the <option>.
+ */
+const SORT_OPTIONS = [
+    { value: 'recent-desc', label: 'Viimeksi kuunneltu — uusin ensin' },
+    { value: 'recent-asc',  label: 'Viimeksi kuunneltu — vanhin ensin' },
+    { value: 'alpha-asc',   label: 'Aakkosissa — A–Ö' },
+    { value: 'alpha-desc',  label: 'Aakkosissa — Ö–A' },
+    { value: 'added-desc',  label: 'Lisäysjärjestys — uusin ensin' },
+    { value: 'added-asc',   label: 'Lisäysjärjestys — vanhin ensin' },
+];
+const DEFAULT_LIBRARY_SORT = 'recent-desc';
+
 const App = {
     currentScreen: 'login',
     currentFolder: null,
@@ -482,7 +497,16 @@ const App = {
             return;
         }
 
+        const sortValue = this._getLibrarySort();
+        const hasSortable = hasBooks || hasStandaloneEbooks || hasStandaloneAudio;
         let html = '';
+
+        // Sort dropdown — only when there's something sortable. The
+        // "Jatka lukemista" card and "Kansiot" section are intentionally
+        // not affected by this control.
+        if (hasSortable) {
+            html += this._renderSortDropdown(sortValue);
+        }
 
         // Show continue reading if available
         const lastRead = this.getLastReadBook();
@@ -492,8 +516,9 @@ const App = {
 
         // Render books (multi-part or from subfolders)
         if (hasBooks) {
+            const books = this._sortLibraryItems(this.library.books, sortValue);
             html += '<div class="library-section"><h3>Kirjat</h3><div class="book-grid">';
-            this.library.books.forEach(book => {
+            books.forEach(book => {
                 html += this.renderBookCard(book);
             });
             html += '</div></div>';
@@ -501,8 +526,9 @@ const App = {
 
         // Render standalone ebooks
         if (hasStandaloneEbooks) {
+            const ebooks = this._sortLibraryItems(this.library.standaloneFiles.ebooks, sortValue);
             html += '<div class="library-section"><h3>Yksittäiset kirjat</h3><div class="file-list">';
-            this.library.standaloneFiles.ebooks.forEach(file => {
+            ebooks.forEach(file => {
                 const progress = this._getItemProgress(file);
                 const type = Drive.isEPUB(file) ? 'epub' : 'pdf';
                 html += this.renderFileItem(file, type, progress);
@@ -512,8 +538,9 @@ const App = {
 
         // Render standalone audio
         if (hasStandaloneAudio) {
+            const audio = this._sortLibraryItems(this.library.standaloneFiles.audio, sortValue);
             html += '<div class="library-section"><h3>Yksittäiset äänitiedostot</h3><div class="file-list">';
-            this.library.standaloneFiles.audio.forEach(file => {
+            audio.forEach(file => {
                 const progress = this._getItemProgress(file);
                 html += this.renderFileItem(file, 'audio', progress);
             });
@@ -546,8 +573,168 @@ const App = {
 
         content.innerHTML = html;
 
+        // Wire up the sort dropdown (if rendered) before the library
+        // click handlers so a stray click on the <select> doesn't bubble
+        // into anything below it.
+        const sortSelect = content.querySelector('#library-sort-select');
+        if (sortSelect) {
+            sortSelect.addEventListener('change', (e) => {
+                Storage.setSettings({ librarySort: e.target.value });
+                this.renderLibrary();
+            });
+        }
+
         // Add click handlers
         this.setupLibraryClickHandlers(content);
+    },
+
+    /**
+     * Read the persisted library sort key from Storage, falling back to the
+     * default. Unknown values (e.g. a future option that's been retired) also
+     * fall back to the default so the dropdown never renders an empty choice.
+     */
+    _getLibrarySort() {
+        const saved = Storage.getSettings().librarySort;
+        return SORT_OPTIONS.some(o => o.value === saved) ? saved : DEFAULT_LIBRARY_SORT;
+    },
+
+    /** Build the sort dropdown HTML with the saved option preselected. */
+    _renderSortDropdown(currentValue) {
+        const options = SORT_OPTIONS.map(opt => {
+            const selected = opt.value === currentValue ? ' selected' : '';
+            return `<option value="${opt.value}"${selected}>${opt.label}</option>`;
+        }).join('');
+        return `
+            <div class="library-sort-row" style="display: flex; align-items: center; gap: 8px; padding: 12px 16px;">
+                <label for="library-sort-select" style="font-size: 0.9rem; color: var(--text-secondary);">Järjestys:</label>
+                <select id="library-sort-select"
+                    style="flex: 1; max-width: 320px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.9rem;">
+                    ${options}
+                </select>
+            </div>
+        `;
+    },
+
+    /**
+     * Sort an array of library items (books OR standalone files) by the
+     * chosen sort key. Returns a new array — callers can safely splice the
+     * result without mutating `this.library`.
+     *
+     * Items missing the sort key always sort to the END of the list,
+     * regardless of direction (so empty rows don't surface first).
+     */
+    _sortLibraryItems(items, sortValue) {
+        if (!Array.isArray(items) || items.length === 0) return [];
+        const arr = items.slice();
+        const sorter = this._comparatorFor(sortValue);
+        arr.sort(sorter);
+        return arr;
+    },
+
+    /** Build a comparator for the named sort. */
+    _comparatorFor(sortValue) {
+        switch (sortValue) {
+            case 'alpha-asc':   return this._compareAlpha(true);
+            case 'alpha-desc':  return this._compareAlpha(false);
+            case 'recent-asc':  return this._compareNumericKey(item => this._lastReadKey(item), true);
+            case 'recent-desc': return this._compareNumericKey(item => this._lastReadKey(item), false);
+            case 'added-asc':   return this._compareNumericKey(item => this._addedKey(item), true);
+            case 'added-desc':  return this._compareNumericKey(item => this._addedKey(item), false);
+            default:            return this._compareNumericKey(item => this._lastReadKey(item), false);
+        }
+    },
+
+    /** Alphabetical comparator using Finnish collation. */
+    _compareAlpha(ascending) {
+        const dir = ascending ? 1 : -1;
+        return (a, b) => {
+            const an = a?.name || '';
+            const bn = b?.name || '';
+            return an.localeCompare(bn, 'fi', { numeric: true, sensitivity: 'base' }) * dir;
+        };
+    },
+
+    /**
+     * Numeric comparator. `keyFn` returns the comparable number for an
+     * item, or `undefined` when the item has no value for the chosen key.
+     * Missing values always go to the END regardless of direction.
+     */
+    _compareNumericKey(keyFn, ascending) {
+        const dir = ascending ? 1 : -1;
+        return (a, b) => {
+            const av = keyFn(a);
+            const bv = keyFn(b);
+            const aMissing = av === undefined || av === null || Number.isNaN(av);
+            const bMissing = bv === undefined || bv === null || Number.isNaN(bv);
+            if (aMissing && bMissing) {
+                // Stable-ish tiebreaker on name so the missing tail isn't
+                // randomly ordered between renders.
+                return (a?.name || '').localeCompare(b?.name || '', 'fi', { numeric: true, sensitivity: 'base' });
+            }
+            if (aMissing) return 1;
+            if (bMissing) return -1;
+            if (av === bv) return 0;
+            return av < bv ? -1 * dir : 1 * dir;
+        };
+    },
+
+    /**
+     * Last-read epoch ms for a library item.
+     * - Books with a book-level progressKey (R2): direct lookup.
+     * - Multi-part books (Drive folder/group): max lastRead across parts.
+     * - Standalone files: their own progress.
+     * Returns undefined when nothing has been read.
+     */
+    _lastReadKey(item) {
+        if (!item) return undefined;
+
+        // Book-level progressKey covers HLS/R2 + any future single-key book.
+        if (item.progressKey) {
+            const p = Storage.getBookProgress(item.progressKey);
+            if (p?.lastRead) return p.lastRead;
+        }
+
+        // Multi-part book: scan its parts.
+        const parts = [
+            ...(item.ebooks || []),
+            ...(item.audioFiles || []),
+        ];
+        if (parts.length > 0) {
+            let max;
+            for (const part of parts) {
+                const key = part.progressKey || `${part.sourceId || 'drive'}:${part.key || part.id}`;
+                const p = Storage.getBookProgress(key);
+                if (p?.lastRead && (max === undefined || p.lastRead > max)) {
+                    max = p.lastRead;
+                }
+            }
+            return max;
+        }
+
+        // Standalone file.
+        const key = item.progressKey || `${item.sourceId || 'drive'}:${item.key || item.id}`;
+        const p = Storage.getBookProgress(key);
+        return p?.lastRead;
+    },
+
+    /**
+     * "Added-at" key for a library item.
+     * - R2 books carry `_addedAt` (manifest index, lower = added earlier).
+     * - Drive books/files carry `modifiedTime` (ISO string); we parse to
+     *   epoch ms so it sorts on the same numeric axis as the R2 index
+     *   would (lower = earlier). The two scales never mix in practice
+     *   because each library belongs to a single provider.
+     * Returns undefined when neither field is available.
+     */
+    _addedKey(item) {
+        if (!item) return undefined;
+        if (typeof item._addedAt === 'number') return item._addedAt;
+        const mt = item.modifiedTime;
+        if (typeof mt === 'string' && mt) {
+            const t = Date.parse(mt);
+            if (!Number.isNaN(t)) return t;
+        }
+        return undefined;
     },
 
     /**

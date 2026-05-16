@@ -255,7 +255,22 @@ const DriveProvider = Object.assign(Object.create(ProviderBase), {
             format: 'native',
             sourceId: 'drive',
             progressKey: null,           // single-file books use file's progressKey
+            // Max modifiedTime across the book's files — used by the
+            // library renderer to sort by "lisäysjärjestys". We don't fetch
+            // folder metadata for cost reasons; file-max is good enough.
+            modifiedTime: this._maxModifiedTime([...ebooks, ...audioFiles]),
         };
+    },
+
+    /** Largest modifiedTime (ISO string) across the given Drive files. */
+    _maxModifiedTime(files) {
+        let max = null;
+        for (const f of files || []) {
+            const t = f?.modifiedTime;
+            if (!t) continue;
+            if (!max || t > max) max = t;
+        }
+        return max;
     },
 
     /**
@@ -300,6 +315,7 @@ const DriveProvider = Object.assign(Object.create(ProviderBase), {
                     primaryType: 'ebook',
                     isVirtualGroup: true,
                     format: 'native',
+                    modifiedTime: this._maxModifiedTime(groupFiles),
                 });
             } else {
                 library.standaloneFiles.ebooks.push(this._toItem(groupFiles[0]));
@@ -313,6 +329,11 @@ const DriveProvider = Object.assign(Object.create(ProviderBase), {
                     existing.audioFiles = groupFiles.sort(this._naturalSort).map(f => this._toItem(f));
                     existing.audioCount = groupFiles.length;
                     existing.primaryType = 'both';
+                    // Refresh max across both ebook + audio sides.
+                    existing.modifiedTime = this._maxModifiedTime([
+                        ...(existing.ebooks || []),
+                        ...groupFiles,
+                    ]);
                 } else {
                     library.books.push({
                         id: `group_audio_${groupFiles[0].id}`,
@@ -328,6 +349,7 @@ const DriveProvider = Object.assign(Object.create(ProviderBase), {
                         primaryType: 'audio',
                         isVirtualGroup: true,
                         format: 'native',
+                        modifiedTime: this._maxModifiedTime(groupFiles),
                     });
                 }
             } else {
