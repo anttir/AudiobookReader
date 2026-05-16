@@ -13,6 +13,8 @@ const AudioPlayer = {
     isLoading: false,
     updateInterval: null,
     _hlsLoadingPromise: null,
+    _hlsRecoveryAttempts: 0,
+    _currentChapterIndex: -1,
     // hls.js CDN — pinned version. Update intentionally; do not float to @latest.
     HLS_JS_SRC: 'https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js',
 
@@ -212,12 +214,27 @@ const AudioPlayer = {
         const index = this.playlist.findIndex(t => t.sourceId === item.sourceId && t.key === item.key);
         if (index !== -1) this.currentIndex = index;
 
-        const displayName = this.cleanFileName(item.name || '');
+        // Prefer the book name over the audio filename — for HLS books the
+        // filename is just "playlist", which isn't useful as a title.
+        const book = (typeof App !== 'undefined') ? App.currentBook : null;
+        const fileName = this.cleanFileName(item.name || '');
+        const displayName = (item.isPlaylist && book?.name) ? book.name : fileName;
         document.getElementById('audio-title').textContent = displayName;
-        document.getElementById('audio-chapter').textContent = `Kappale ${this.currentIndex + 1} / ${this.playlist.length}`;
         document.getElementById('current-book-title').textContent = displayName;
         document.getElementById('current-time').textContent = '0:00';
         document.getElementById('duration').textContent = '';
+
+        // Default subtitle: chapter title if the book ships one, else the
+        // legacy "track X of Y" for multi-file books.
+        this._currentChapterIndex = -1;
+        const chapters = book?.chapters;
+        if (chapters?.length) {
+            document.getElementById('audio-chapter').textContent = chapters[0].title;
+            document.getElementById('current-chapter').textContent = chapters[0].title;
+        } else {
+            document.getElementById('audio-chapter').textContent = `Kappale ${this.currentIndex + 1} / ${this.playlist.length}`;
+            document.getElementById('current-chapter').textContent = '';
+        }
 
         // Album cover: prefer the item's own cover, then fall back to the
         // active book (R2 attaches the cover URL at book level, not on
@@ -326,16 +343,47 @@ const AudioPlayer = {
                     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
                 },
             });
+            // Reset the recovery counter every time a fragment actually
+            // loads — three transient stalls in a row counts as fatal, but
+            // three stalls spread across an hour shouldn't.
+            this._hlsRecoveryAttempts = 0;
+            this.hls.on(window.Hls.Events.FRAG_LOADED, () => {
+                this._hlsRecoveryAttempts = 0;
+            });
             this.hls.on(window.Hls.Events.ERROR, (_event, data) => {
                 if (!data.fatal) return;
                 console.error('HLS fatal error:', data);
                 // Surface auth failures with a clearer message — most often
-                // a stale token (>1h since sign-in).
+                // a stale token (>1h since sign-in). No auto-recovery
+                // possible without re-auth, so bail.
                 const status = data.response?.code;
                 if (status === 401 || status === 403) {
                     App.showToast('R2: kirjautuminen vanhentui, kirjaudu uudelleen', 'error');
+                    return;
+                }
+                // For other fatal errors (most commonly a flaky mobile
+                // connection mid-segment) try to recover transparently
+                // before surfacing anything. hls.js exposes
+                // startLoad()/recoverMediaError() exactly for this.
+                if (this._hlsRecoveryAttempts >= 3) {
+                    App.showToast('HLS-virhe: ' + (data.details || 'tuntematon'), 'error');
+                    return;
+                }
+                this._hlsRecoveryAttempts++;
+                const wasPlaying = !this.audio.paused;
+                if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+                    console.warn(`HLS network recovery attempt #${this._hlsRecoveryAttempts}: ${data.details}`);
+                    try { this.hls.startLoad(); } catch (e) { console.error(e); }
+                } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+                    console.warn(`HLS media recovery attempt #${this._hlsRecoveryAttempts}: ${data.details}`);
+                    try { this.hls.recoverMediaError(); } catch (e) { console.error(e); }
                 } else {
                     App.showToast('HLS-virhe: ' + (data.details || 'tuntematon'), 'error');
+                    return;
+                }
+                // Resume playback if the stall paused us
+                if (wasPlaying) {
+                    this.audio.play().catch(err => console.warn('Auto-resume after HLS recovery failed:', err));
                 }
             });
             this.hls.loadSource(url);
@@ -421,7 +469,13 @@ const AudioPlayer = {
         if (!('mediaSession' in navigator)) return;
 
         const book = (typeof App !== 'undefined') ? App.currentBook : null;
-        const title = this.cleanFileName(item?.name || '');
+        // For HLS books the filename is "playlist" — fall back to the book
+        // name (or the live chapter title, if available) so the OS shows
+        // something meaningful on the lock screen.
+        const chapter = this._currentChapterTitle();
+        const fileTitle = this.cleanFileName(item?.name || '');
+        const title = chapter
+            || ((item?.isPlaylist && book?.name) ? book.name : fileTitle);
         const artist = book?.author || 'AudioBook Reader';
         const album = book?.name || 'Äänikirja';
         const coverUrl = item?.cover || book?.cover || null;
@@ -551,9 +605,87 @@ const AudioPlayer = {
             // Update time displays
             document.getElementById('current-time').textContent = this.formatTime(current);
 
+            // Refresh chapter title if the book carries chapter metadata
+            this._updateCurrentChapter(current);
+
             // Save progress periodically
             this.saveProgress();
         }
+    },
+
+    /**
+     * Resolve the active book's chapters array (or null).
+     */
+    _currentChapters() {
+        const book = (typeof App !== 'undefined') ? App.currentBook : null;
+        return book?.chapters?.length ? book.chapters : null;
+    },
+
+    /**
+     * Find the chapter index whose start <= t. Returns -1 if no chapters.
+     */
+    _chapterIndexAt(t) {
+        const chapters = this._currentChapters();
+        if (!chapters) return -1;
+        let idx = 0;
+        for (let i = 0; i < chapters.length; i++) {
+            if (chapters[i].start <= t) idx = i;
+            else break;
+        }
+        return idx;
+    },
+
+    /**
+     * Title of the chapter currently playing (or null when no chapters).
+     */
+    _currentChapterTitle() {
+        const chapters = this._currentChapters();
+        if (!chapters) return null;
+        const idx = this._chapterIndexAt(this.audio?.currentTime || 0);
+        return idx >= 0 ? chapters[idx].title : null;
+    },
+
+    /**
+     * Update the chapter title displayed under the cover + in the header.
+     * No-op when the index hasn't changed (so we don't thrash the DOM at
+     * timeupdate's ~4Hz rate).
+     */
+    _updateCurrentChapter(currentTime) {
+        const chapters = this._currentChapters();
+        if (!chapters) return;
+        const idx = this._chapterIndexAt(currentTime);
+        if (idx === this._currentChapterIndex) return;
+        this._currentChapterIndex = idx;
+        const title = chapters[idx]?.title || '';
+        const subEl = document.getElementById('audio-chapter');
+        const headerEl = document.getElementById('current-chapter');
+        if (subEl) subEl.textContent = title;
+        if (headerEl) headerEl.textContent = title;
+        // Refresh MediaSession so the lock screen also follows along
+        if (this.currentItem) this.updateMediaSession(this.currentItem);
+    },
+
+    /**
+     * Seek to a chapter (or any { start } object). Starts playback if it
+     * was paused, queues the seek if metadata isn't loaded yet.
+     */
+    seekToChapter(chapter) {
+        if (!chapter || typeof chapter.start !== 'number') return;
+        const target = Math.max(0, chapter.start);
+        if (!this.audio.duration || isNaN(this.audio.duration)) {
+            const onReady = () => {
+                this.audio.currentTime = target;
+                this.audio.removeEventListener('loadedmetadata', onReady);
+            };
+            this.audio.addEventListener('loadedmetadata', onReady);
+            return;
+        }
+        this.audio.currentTime = target;
+        // Force-refresh the chapter label even if timeupdate hasn't fired
+        // yet — useful when seeking while paused.
+        this._currentChapterIndex = -1;
+        this._updateCurrentChapter(target);
+        if (!this.isPlaying) this.play();
     },
 
     /**

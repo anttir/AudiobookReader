@@ -200,7 +200,26 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
             // Optional manifest fields surfaced for UI / MediaSession.
             author: entry.author || null,
             narrator: entry.narrator || null,
+            chapters: this._normaliseChapters(entry.chapters),
         };
+    },
+
+    /**
+     * Validate + normalise the optional `chapters` array on a manifest
+     * entry. Returns null when missing/empty so callers can do a simple
+     * truthy check. Entries are sorted by start so the player can lookup
+     * the current chapter with a linear scan.
+     */
+    _normaliseChapters(raw) {
+        if (!Array.isArray(raw) || !raw.length) return null;
+        const out = raw
+            .map((c, i) => ({
+                title: (c && typeof c.title === 'string' ? c.title.trim() : '') || `Luku ${i + 1}`,
+                start: (c && typeof c.start === 'number' && c.start >= 0) ? Number(c.start) : null,
+            }))
+            .filter(c => c.start !== null)
+            .sort((a, b) => a.start - b.start);
+        return out.length ? out : null;
     },
 
     // --- library -----------------------------------------------------------

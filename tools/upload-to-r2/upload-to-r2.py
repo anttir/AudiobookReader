@@ -151,6 +151,51 @@ def total_duration(segments: list[tuple[int, float]]) -> float:
     return sum(d for _, d in segments)
 
 
+# ---------- chapters --------------------------------------------------------
+
+def load_chapters(path: Path, total_secs: float) -> list[dict]:
+    """
+    Parse a chapters JSON file. Accepted shapes:
+
+        [ { "title": "Luku 1", "start": 0.0 }, ... ]
+        { "chapters": [ ... ] }                # wrapped form, same items
+
+    `start` is seconds from the beginning of the audio. Validates that
+    starts are >= 0, <= total duration (with 1s slack), and unique;
+    sorts them; returns the cleaned list ready to drop into index.json.
+    """
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    items = raw.get("chapters") if isinstance(raw, dict) else raw
+    if not isinstance(items, list) or not items:
+        raise RuntimeError(f"{path}: expected a non-empty array of chapter objects")
+
+    cleaned: list[dict] = []
+    seen_starts: set[float] = set()
+    for i, c in enumerate(items):
+        if not isinstance(c, dict):
+            raise RuntimeError(f"{path}[{i}]: not an object")
+        start = c.get("start")
+        if not isinstance(start, (int, float)) or start < 0:
+            raise RuntimeError(f"{path}[{i}]: 'start' must be a non-negative number")
+        start_f = float(start)
+        if start_f > total_secs + 1.0:
+            raise RuntimeError(
+                f"{path}[{i}]: 'start' ({start_f:.1f}s) is past the end of the audio "
+                f"({total_secs:.1f}s)"
+            )
+        if start_f in seen_starts:
+            raise RuntimeError(f"{path}[{i}]: duplicate 'start' {start_f}")
+        seen_starts.add(start_f)
+        title = c.get("title")
+        cleaned.append({
+            "title": (title.strip() if isinstance(title, str) and title.strip() else f"Luku {i + 1}"),
+            "start": round(start_f, 3),
+        })
+
+    cleaned.sort(key=lambda c: c["start"])
+    return cleaned
+
+
 # ---------- upload ----------------------------------------------------------
 
 CONTENT_TYPES = {
@@ -235,6 +280,14 @@ def main() -> int:
     p.add_argument("--source-playlist", required=True, type=Path)
     p.add_argument("--segments-dir", required=True, type=Path)
     p.add_argument("--cover", type=Path, default=None)
+    p.add_argument(
+        "--chapters",
+        type=Path,
+        default=None,
+        help='JSON file with chapter markers: [{"title": "Luku 1", "start": 0}, ...]. '
+             "Embedded into the manifest entry so the app can render a TOC and seek "
+             "between chapters. Without this the book plays fine but has no chapter list.",
+    )
     p.add_argument("--workers", type=int, default=16, help="Parallel segment uploads")
     p.add_argument("--dry-run", action="store_true", help="Parse + plan but do not upload")
     args = p.parse_args()
@@ -250,6 +303,11 @@ def main() -> int:
     header, segments = parse_source_playlist(args.source_playlist)
     print(f"Parsed {len(segments)} segments from {args.source_playlist.name}")
     print(f"Total duration: {total_duration(segments):.1f}s")
+
+    chapters_payload: list[dict] | None = None
+    if args.chapters:
+        chapters_payload = load_chapters(args.chapters, total_duration(segments))
+        print(f"Loaded {len(chapters_payload)} chapter markers from {args.chapters.name}")
 
     clean_playlist = build_clean_playlist(header, segments)
     prefix = args.book_id.strip().strip("/")
@@ -294,6 +352,8 @@ def main() -> int:
     }
     if cover_key:
         entry["cover"] = cover_key
+    if chapters_payload:
+        entry["chapters"] = chapters_payload
     manifest = upsert_book(manifest, entry)
     upload_bytes(
         s3, creds["bucket"], json.dumps(manifest, indent=2).encode("utf-8"),

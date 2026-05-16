@@ -137,6 +137,14 @@ A single JSON file at the bucket root. The web app fetches it with
       "cover":     "neurovelho/cover.jpg",   // optional
       "duration":  36967.79,                 // optional, seconds (float)
 
+      // Optional. When present the app renders a TOC button in the player
+      // and lets the user seek between chapters. `start` is seconds from
+      // the beginning of the audio. Sorted, deduplicated, validated.
+      "chapters": [
+        { "title": "Luku 1: Alku",        "start": 0       },
+        { "title": "Luku 2: Lentokenttä", "start": 1234.5  }
+      ],
+
       // any other keys are ignored by the app today but kept as you write
       // them — feel free to stash author, narrator, ISBN, etc.
       "author":    "Hannu Rajaniemi",
@@ -211,6 +219,58 @@ segments/000001.ts
 - Forgetting `#EXT-X-ENDLIST` (player thinks it's a live stream and never
   seeks).
 - Wrong `Content-Type` on the `.ts` upload (see table above).
+
+### Chapter markers (optional)
+
+To get a chapter list + jump-between-chapters in the player, attach a
+`chapters` array to the manifest entry. Each item is `{ title, start }`
+where `start` is **seconds** (float) from the beginning of the audio:
+
+```json
+[
+  { "title": "Luku 1: Alku",        "start": 0      },
+  { "title": "Luku 2: Lentokenttä", "start": 1234.5 }
+]
+```
+
+Pass a chapters file to the uploader with `--chapters chapters.json`
+and it gets validated (no overruns past the audio's duration, no
+duplicate starts) and merged into the manifest entry.
+
+The book plays without chapters too; this only unlocks the TOC.
+
+#### Source: where chapters come from
+
+Audiobooks here come from HLS streams (a `.m3u8` playlist + N `.ts`
+segments), not single-file containers — so there are no embedded
+chapter atoms to read. The chapter data has to come from whichever
+service originally packaged the book.
+
+- **BookBeat** exposes `/api/content/<ISBN>/chapters`:
+
+  ```json
+  {
+    "isbn": "9789512449217",
+    "type": "tracks",
+    "items": [
+      { "start": 0,        "end": 3516883, "title": "Track 1", "duration": 3516883 },
+      { "start": 3516883,  "end": 4313036, "title": "Track 2", "duration": 796152  }
+    ]
+  }
+  ```
+
+  **`start` and `duration` are milliseconds** — divide by 1000 when
+  emitting `chapters.json`. The sibling project at
+  `D:\+Ohjelmointi\Bookbeat\client\grab_book.py` captures this response
+  from its mitm flows and writes a `chapters.json` automatically.
+
+- **Other services**: poke around the official client's network
+  traffic with mitmproxy. Most audiobook services expose chapter info
+  on a per-content endpoint; the shape varies.
+
+- **Manual**: hand-write `chapters.json` from a CUE sheet, a PDF TOC,
+  or by listening + jotting down timestamps. The schema is just
+  `[{ title, start }]`.
 
 ### Reference: how `upload-to-r2.py` does it
 
@@ -420,7 +480,8 @@ free tier.
 
 - `tools/upload-to-r2/upload-to-r2.py` — Python uploader for HLS books.
   Run with `--book-id`, `--book-name`, `--source-playlist`,
-  `--segments-dir`, optional `--cover`, optional `--workers N`.
+  `--segments-dir`, optional `--cover`, optional `--chapters`
+  (JSON file with `[{title, start}, ...]`), optional `--workers N`.
 - `tools/upload-to-r2/cors.json` — example CORS policy for the bucket
   (when not using the auth worker).
 - `tools/r2-auth-worker/` — Cloudflare Worker that gates the bucket

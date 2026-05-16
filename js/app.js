@@ -941,6 +941,12 @@ const App = {
                 : (this.files?.audio || [item]);
             AudioPlayer.setPlaylist(audioFiles);
             await AudioPlayer.loadTrack(item);
+            // Single-file HLS book that ships chapter metadata? Reveal the
+            // "Sisällysluettelo" button so the user can jump between
+            // chapters even though the book isn't multi-file.
+            if (this.currentBook?.chapters?.length && !this.currentBook.isMultiPart) {
+                this.showChapterListButton(this.currentBook.chapters.length);
+            }
         } else if (isPDF) {
             if (item.sourceId !== 'drive') {
                 this.showToast('PDF on tällä hetkellä tuettu vain Google Drivestä', 'info');
@@ -972,6 +978,17 @@ const App = {
     },
 
     /**
+     * Show the parts button as a "Sisällysluettelo" entry point — used
+     * for HLS audiobooks that ship a `chapters` array but only have one
+     * underlying audio file (so the file-based parts label is wrong).
+     */
+    showChapterListButton(count) {
+        const btn = document.getElementById('show-parts-btn');
+        document.getElementById('parts-info').textContent = `${count} kappaletta`;
+        btn.classList.remove('hidden');
+    },
+
+    /**
      * Hide parts button
      */
     hidePartsButton() {
@@ -986,6 +1003,42 @@ const App = {
 
         const list = document.getElementById('chapter-list');
         const chapters = document.getElementById('chapters');
+
+        // HLS audiobooks with a `chapters` manifest array: render those
+        // (each entry seeks to chapter.start) instead of the playlist
+        // file. The non-HLS code path below handles multi-file books.
+        if (this.currentBook.chapters?.length) {
+            const ch = this.currentBook.chapters;
+            const currentTime = AudioPlayer.audio?.currentTime || 0;
+            let activeIdx = 0;
+            for (let i = 0; i < ch.length; i++) {
+                if (ch[i].start <= currentTime) activeIdx = i;
+                else break;
+            }
+            let chapterHtml = '';
+            ch.forEach((c, i) => {
+                chapterHtml += `
+                    <li class="${i === activeIdx ? 'active' : ''}" data-chapter-index="${i}">
+                        <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                        <span>${c.title}</span>
+                        <span class="chapter-progress">${AudioPlayer.formatTime(c.start)}</span>
+                    </li>
+                `;
+            });
+            chapters.innerHTML = chapterHtml;
+            chapters.querySelectorAll('li[data-chapter-index]').forEach(item => {
+                item.addEventListener('click', () => {
+                    const idx = Number(item.dataset.chapterIndex);
+                    AudioPlayer.seekToChapter(ch[idx]);
+                    this.hideChapterList();
+                });
+            });
+            // Scroll active row into view (chapter lists can be long)
+            const active = chapters.querySelector('li.active');
+            if (active) active.scrollIntoView({ block: 'center' });
+            list.classList.remove('hidden');
+            return;
+        }
 
         let html = '';
 
