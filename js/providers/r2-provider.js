@@ -98,6 +98,19 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
     },
 
     /**
+     * URL for resources that end up in <img src> (covers) — needs the
+     * token as a query param since the auth-worker proxy can't read
+     * headers from an <img> request. Mirrors what getStreamUrl does for
+     * <audio src> on Safari.
+     */
+    _imgUrl(key) {
+        const url = this._absUrl(key);
+        if (!url) return null;
+        const token = this._accessToken();
+        return token ? `${url}?_token=${encodeURIComponent(token)}` : url;
+    },
+
+    /**
      * Returns true if the configured base URL is a plain public
      * `pub-<hash>.r2.dev` endpoint — that URL ignores Authorization
      * headers and, more importantly, its CORS rules typically don't
@@ -181,7 +194,7 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
             audioFiles,
             ebookCount: 0,
             audioCount: audioFiles.length,
-            cover: entry.cover ? this._absUrl(entry.cover) : null,
+            cover: entry.cover ? this._imgUrl(entry.cover) : null,
             duration: entry.duration,
             progressKey,
             // Optional manifest fields surfaced for UI / MediaSession.
