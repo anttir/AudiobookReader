@@ -101,19 +101,65 @@ const Storage = {
     },
 
     /**
-     * Get book progress
+     * Normalise a progress key.
+     *
+     * Accepts:
+     *   - (sourceId, itemKey)            → "sourceId:itemKey"
+     *   - ("sourceId:itemKey")           → returned as-is
+     *   - ("rawDriveFileId")             → "drive:rawDriveFileId" (legacy)
+     *
+     * The legacy fallback exists so the untouched pdf/epub viewers
+     * (which still pass a bare Drive fileId) continue to work.
      */
-    getBookProgress(fileId) {
-        const allProgress = this.get(CONFIG.STORAGE_KEYS.bookProgress) || {};
-        return allProgress[fileId] || null;
+    _progressKey(keyOrSource, maybeKey) {
+        if (maybeKey !== undefined && maybeKey !== null) {
+            return `${keyOrSource}:${maybeKey}`;
+        }
+        if (typeof keyOrSource === 'string' && keyOrSource.includes(':')) {
+            return keyOrSource;
+        }
+        return `drive:${keyOrSource}`;
     },
 
     /**
-     * Set book progress
+     * Split a namespaced progress key back into { sourceId, itemKey }.
+     * Returns null for malformed keys.
      */
-    setBookProgress(fileId, progress) {
+    parseProgressKey(key) {
+        if (typeof key !== 'string') return null;
+        const idx = key.indexOf(':');
+        if (idx < 1) return null;
+        return { sourceId: key.slice(0, idx), itemKey: key.slice(idx + 1) };
+    },
+
+    /**
+     * Get book progress.
+     * Call as getBookProgress(sourceId, itemKey) or getBookProgress("source:key")
+     * or, for legacy callers, getBookProgress(driveFileId).
+     */
+    getBookProgress(keyOrSource, maybeKey) {
+        const key = this._progressKey(keyOrSource, maybeKey);
         const allProgress = this.get(CONFIG.STORAGE_KEYS.bookProgress) || {};
-        allProgress[fileId] = {
+        return allProgress[key] || null;
+    },
+
+    /**
+     * Set book progress.
+     * Call as setBookProgress(sourceId, itemKey, progress) or
+     * setBookProgress("source:key", progress) or, for legacy callers,
+     * setBookProgress(driveFileId, progress).
+     */
+    setBookProgress(keyOrSource, progressOrKey, maybeProgress) {
+        let key, progress;
+        if (maybeProgress !== undefined) {
+            key = this._progressKey(keyOrSource, progressOrKey);
+            progress = maybeProgress;
+        } else {
+            key = this._progressKey(keyOrSource);
+            progress = progressOrKey;
+        }
+        const allProgress = this.get(CONFIG.STORAGE_KEYS.bookProgress) || {};
+        allProgress[key] = {
             ...progress,
             lastRead: Date.now()
         };
@@ -121,10 +167,39 @@ const Storage = {
     },
 
     /**
-     * Get all book progress
+     * Get all book progress, keyed by namespaced progress key.
      */
     getAllBookProgress() {
         return this.get(CONFIG.STORAGE_KEYS.bookProgress) || {};
+    },
+
+    /**
+     * One-time migration: pre-namespaced keys (raw Drive fileIds) get the
+     * "drive:" prefix so they don't collide with future R2 entries.
+     */
+    _migrateProgressKeysV1() {
+        const settings = this.get(CONFIG.STORAGE_KEYS.settings) || {};
+        if (settings.progressKeysMigrated_v1) return;
+
+        const all = this.get(CONFIG.STORAGE_KEYS.bookProgress);
+        if (all && typeof all === 'object') {
+            const migrated = {};
+            let changed = false;
+            for (const [k, v] of Object.entries(all)) {
+                if (k.includes(':')) {
+                    migrated[k] = v;
+                } else {
+                    migrated[`drive:${k}`] = v;
+                    changed = true;
+                }
+            }
+            if (changed) {
+                this.set(CONFIG.STORAGE_KEYS.bookProgress, migrated);
+                console.info(`[storage] migrated ${Object.keys(migrated).length} progress keys → namespaced`);
+            }
+        }
+        settings.progressKeysMigrated_v1 = true;
+        this.set(CONFIG.STORAGE_KEYS.settings, settings);
     },
 
     /**
@@ -145,3 +220,6 @@ const Storage = {
         });
     }
 };
+
+// Run progress-key migration once on load. Safe to call repeatedly.
+try { Storage._migrateProgressKeysV1(); } catch (e) { console.warn('progress migration failed:', e); }
