@@ -255,25 +255,44 @@ const App = {
             if (status) status.textContent = 'URL:n pitää alkaa https://';
             return;
         }
+        const defaultUrl = CONFIG?.R2_DEFAULT_BASE_URL || '';
         try {
-            R2Provider.setConfig({ baseUrl: url });
-            if (status) status.textContent = 'Tallennettu. Vaihda lähteeksi Cloudflare R2.';
+            // Saving the same value as the default URL = no override needed;
+            // just clear any existing override so the default stays in effect.
+            if (defaultUrl && url.replace(/\/+$/, '') === defaultUrl.replace(/\/+$/, '')) {
+                R2Provider.clearConfig();
+                if (status) status.textContent = 'Käytössä default-URL (config.js).';
+            } else {
+                R2Provider.setConfig({ baseUrl: url });
+                if (status) status.textContent = 'Tallennettu. Vaihda lähteeksi Cloudflare R2.';
+            }
             this.showToast('R2-asetukset tallennettu', 'success');
-            // If R2 is already the active source, reload library
             if (Providers.activeId() === 'r2') this.loadLibrary();
         } catch (e) {
             if (status) status.textContent = 'Virhe: ' + e.message;
         }
     },
 
-    /** Clear R2 config. */
+    /**
+     * Clear the user override. If a default URL is configured in
+     * CONFIG.R2_DEFAULT_BASE_URL it stays in effect (the input
+     * re-renders to the default value); otherwise R2 becomes
+     * unconfigured.
+     */
     clearR2Config() {
         R2Provider.clearConfig();
+        const cfg = R2Provider.getConfig();
         const input = document.getElementById('r2-base-url');
-        if (input) input.value = '';
         const status = document.getElementById('r2-config-status');
-        if (status) status.textContent = 'Tyhjennetty.';
-        this.showToast('R2-asetukset tyhjennetty', 'info');
+        if (cfg?._isDefault) {
+            if (input) input.value = cfg.baseUrl;
+            if (status) status.textContent = `Palautettu default-URL: ${cfg.baseUrl}`;
+            this.showToast('Palautettu default-URL:hin', 'info');
+        } else {
+            if (input) input.value = '';
+            if (status) status.textContent = 'Tyhjennetty (ei default-URL:a).';
+            this.showToast('R2-asetukset tyhjennetty', 'info');
+        }
         if (Providers.activeId() === 'r2') this.loadLibrary();
     },
 
@@ -1124,7 +1143,15 @@ const App = {
         const r2Status = document.getElementById('r2-config-status');
         const cfg = R2Provider.getConfig();
         if (r2Input) r2Input.value = cfg?.baseUrl || '';
-        if (r2Status) r2Status.textContent = cfg ? `Asetettu: ${cfg.baseUrl}` : 'Ei konfiguroitu.';
+        if (r2Status) {
+            if (!cfg) {
+                r2Status.textContent = 'Ei konfiguroitu.';
+            } else if (cfg._isDefault) {
+                r2Status.textContent = `Käytössä default-URL (config.js): ${cfg.baseUrl}`;
+            } else {
+                r2Status.textContent = `Custom URL: ${cfg.baseUrl}`;
+            }
+        }
 
         this.openModal('settings-modal');
     },

@@ -43,8 +43,23 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
 
     // --- configuration -----------------------------------------------------
 
+    /**
+     * Returns the active R2 config. Order of precedence:
+     *   1. user override saved in localStorage (Settings → Save)
+     *   2. CONFIG.R2_DEFAULT_BASE_URL from js/config.js (shipped with app)
+     *   3. null
+     *
+     * The returned object includes `_isDefault: true` when the default
+     * URL is in effect so the UI can show "default in use".
+     */
     getConfig() {
-        return Storage.get(this.R2_CONFIG_KEY) || null;
+        const saved = Storage.get(this.R2_CONFIG_KEY);
+        if (saved?.baseUrl) return saved;
+        const defaultUrl = (typeof CONFIG !== 'undefined') ? CONFIG.R2_DEFAULT_BASE_URL : '';
+        if (defaultUrl) {
+            return { baseUrl: defaultUrl, label: null, _isDefault: true };
+        }
+        return null;
     },
 
     setConfig(config) {
@@ -57,13 +72,13 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
         return Storage.set(this.R2_CONFIG_KEY, normalised);
     },
 
+    /** Remove user override → next read falls back to the default (if any). */
     clearConfig() {
         return Storage.remove(this.R2_CONFIG_KEY);
     },
 
     isConfigured() {
-        const c = this.getConfig();
-        return !!(c && c.baseUrl);
+        return !!this.getConfig()?.baseUrl;
     },
 
     isAuthenticated() { return true; },     // public bucket

@@ -78,7 +78,15 @@ const CONFIG = {
     API: {
         DRIVE_FILES: 'https://www.googleapis.com/drive/v3/files',
         USER_INFO: 'https://www.googleapis.com/oauth2/v3/userinfo',
-    }
+    },
+
+    // Default URL for the Cloudflare R2 source. Used when the user hasn't
+    // saved their own value in localStorage. Empty string = no default
+    // (settings will show "Ei konfiguroitu" until the user fills it in).
+    //
+    // This is safe to commit to a public repo: the URL is gated by the
+    // r2-auth-worker which only serves to allowlisted Google accounts.
+    R2_DEFAULT_BASE_URL: 'https://audiobookreader-r2.audiobooks.workers.dev',
 };
 
 // Freeze config to prevent accidental modifications
