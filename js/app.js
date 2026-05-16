@@ -10,7 +10,6 @@ const App = {
     currentBook: null,      // Current book being read (can be multi-part)
     currentPartIndex: 0,    // Current part index in multi-part book
     currentMode: 'read',    // 'read' or 'listen'
-    folderStack: [],
 
     /**
      * Initialize the application
@@ -199,23 +198,6 @@ const App = {
         const savedTheme = Storage.getSettings().readerTheme || 'dark';
         document.querySelector(`.theme-btn[data-theme="${savedTheme}"]`)?.classList.add('active');
 
-        // File picker
-        document.getElementById('close-picker').addEventListener('click', () => {
-            this.closeModal('file-picker-modal');
-        });
-
-        document.getElementById('picker-cancel').addEventListener('click', () => {
-            this.closeModal('file-picker-modal');
-        });
-
-        document.getElementById('picker-select').addEventListener('click', () => {
-            this.selectCurrentFolder();
-        });
-
-        document.getElementById('picker-back').addEventListener('click', () => {
-            this.navigatePickerBack();
-        });
-
         // Parts button
         document.getElementById('show-parts-btn').addEventListener('click', () => {
             this.showChapterList();
@@ -356,106 +338,23 @@ const App = {
     },
 
     /**
-     * Open folder picker
+     * Open Google Picker so the user grants the app access to a folder.
+     * Required by the drive.file OAuth scope — we can't list root or
+     * arbitrary folders, only ones the user has picked here.
      */
     async openFolderPicker() {
-        this.openModal('file-picker-modal');
-        this.folderStack = [];
-        await this.loadPickerFolder('root');
-    },
-
-    /**
-     * Load folder contents in picker
-     */
-    async loadPickerFolder(folderId, folderName = 'My Drive') {
-        const content = document.getElementById('picker-content');
-        content.innerHTML = '<div class="picker-loading"><div class="loader"></div><p>Ladataan...</p></div>';
-
-        // Update back button
-        const backBtn = document.getElementById('picker-back');
-        backBtn.classList.toggle('hidden', this.folderStack.length === 0);
-
-        // Update title
-        document.getElementById('picker-title').textContent = folderName;
-
         try {
-            const files = await Drive.getAllFilesInFolder(folderId);
-            const folders = files.filter(f => Drive.isFolder(f));
-
-            // Check if this folder has supported files
-            const hasContent = files.some(f => Drive.isEbook(f) || Drive.isAudio(f));
-
-            // Enable/disable select button
-            document.getElementById('picker-select').disabled = !hasContent && folderId !== 'root';
-
-            // Render folder list
-            if (folders.length === 0 && folderId === 'root') {
-                content.innerHTML = `
-                    <div class="empty-state" style="padding: 40px;">
-                        <p>Ei kansioita</p>
-                    </div>
-                `;
-                return;
-            }
-
-            let html = '<div class="picker-list">';
-
-            folders.forEach(folder => {
-                html += `
-                    <div class="picker-item" data-id="${folder.id}" data-name="${folder.name}">
-                        <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" fill="#f39c12"/></svg>
-                        <span>${folder.name}</span>
-                    </div>
-                `;
-            });
-
-            html += '</div>';
-            content.innerHTML = html;
-
-            // Add click handlers
-            content.querySelectorAll('.picker-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    this.folderStack.push({ id: folderId, name: folderName });
-                    this.loadPickerFolder(item.dataset.id, item.dataset.name);
-                });
-            });
-
-            // Store current folder info
-            this.pickerCurrentFolder = { id: folderId, name: folderName };
-
+            const folder = await Drive.pickFolder();
+            if (!folder) return;
+            this.currentFolder = folder;
+            Storage.setSelectedFolder(folder);
+            document.getElementById('folder-name').textContent = folder.name;
+            const pathEl = document.getElementById('current-folder-path');
+            if (pathEl) pathEl.textContent = folder.name;
+            await this.loadLibrary();
         } catch (error) {
-            console.error('Error loading folder:', error);
-            content.innerHTML = `
-                <div class="empty-state" style="padding: 40px;">
-                    <p>Virhe kansion lataamisessa</p>
-                </div>
-            `;
-        }
-    },
-
-    /**
-     * Navigate back in picker
-     */
-    navigatePickerBack() {
-        if (this.folderStack.length > 0) {
-            const prev = this.folderStack.pop();
-            this.loadPickerFolder(prev.id, prev.name);
-        }
-    },
-
-    /**
-     * Select current folder in picker
-     */
-    selectCurrentFolder() {
-        if (this.pickerCurrentFolder) {
-            this.currentFolder = this.pickerCurrentFolder;
-            Storage.setSelectedFolder(this.currentFolder);
-
-            document.getElementById('folder-name').textContent = this.currentFolder.name;
-            document.getElementById('current-folder-path').textContent = this.currentFolder.name;
-
-            this.closeModal('file-picker-modal');
-            this.loadLibrary();
+            console.error('Picker error:', error);
+            this.showToast('Kansion valinta epäonnistui: ' + (error.message || error), 'error');
         }
     },
 
@@ -495,9 +394,27 @@ const App = {
             this.renderLibrary();
         } catch (error) {
             console.error('Error loading library:', error);
+            // drive.file: a previously-saved folder is unreachable until
+            // the user re-picks it via Google Picker. Surface that
+            // explicitly instead of a generic error.
+            const msg = String(error?.message || error);
+            const isAccessIssue = provider.id === 'drive' && /\b(403|404)\b/.test(msg);
+            if (isAccessIssue && this.currentFolder) {
+                this.currentFolder = null;
+                Storage.setSelectedFolder(null);
+                document.getElementById('folder-name').textContent = 'Valitse kansio Google Drivestä';
+                content.innerHTML = `
+                    <div class="empty-state" style="padding: 40px;">
+                        <p>Kansiota ei löydy tai siihen ei ole pääsyä. Valitse kansio uudelleen Pickeristä.</p>
+                        <button id="repick-folder-btn" class="primary-btn" style="margin-top: 12px;">Valitse kansio</button>
+                    </div>`;
+                document.getElementById('repick-folder-btn')
+                    ?.addEventListener('click', () => this.openFolderPicker());
+                return;
+            }
             content.innerHTML = `
                 <div class="empty-state">
-                    <p>Virhe kirjaston lataamisessa: ${error.message || error}</p>
+                    <p>Virhe kirjaston lataamisessa: ${msg}</p>
                 </div>
             `;
         }
