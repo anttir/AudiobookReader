@@ -1,0 +1,19 @@
+# Local secrets — never commit
+.env
+.env.local
+*.env
+
+# Python virtualenvs (used by tools/)
+**/venv/
+**/.venv/
+__pycache__/
+*.pyc
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Stray Windows artefacts from redirections that should never be used
+nul
