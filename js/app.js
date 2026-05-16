@@ -19,6 +19,11 @@ const App = {
         // Apply saved theme
         this.applyTheme();
 
+        // Restore active storage source + render selector
+        Providers.restoreActive();
+        this.renderSourceSelector();
+        this.updateFolderSelectorVisibility();
+
         // Initialize modules
         PDFViewer.init();
         EPUBViewer.init();
@@ -34,6 +39,72 @@ const App = {
         setTimeout(() => {
             document.getElementById('loading-screen').classList.add('hidden');
         }, 500);
+    },
+
+    /**
+     * Render the source selector tabs from registered providers.
+     */
+    renderSourceSelector() {
+        const container = document.getElementById('source-selector');
+        if (!container) return;
+        const activeId = Providers.activeId();
+        const buttons = Providers.list().map(p => {
+            const isActive = p.id === activeId;
+            return `
+                <button type="button" class="source-btn ${isActive ? 'active' : ''}" data-source="${p.id}"
+                    style="
+                        display: flex; align-items: center; gap: 6px;
+                        padding: 6px 12px; border-radius: 999px; cursor: pointer;
+                        background: ${isActive ? 'var(--accent)' : 'var(--bg-secondary)'};
+                        color: ${isActive ? 'white' : 'var(--text-primary)'};
+                        border: 1px solid ${isActive ? 'var(--accent)' : 'var(--border-color)'};
+                        font-size: 0.85rem; white-space: nowrap;
+                    ">
+                    <span style="display: inline-flex; width: 18px; height: 18px;">${p.icon || ''}</span>
+                    <span>${p.displayName}</span>
+                </button>
+            `;
+        }).join('');
+        container.innerHTML = buttons;
+        container.querySelectorAll('.source-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.switchSource(btn.dataset.source));
+        });
+    },
+
+    /** Switch the active storage source. */
+    async switchSource(sourceId) {
+        if (sourceId === Providers.activeId()) return;
+        // Stop any in-flight audio so we don't leak streams across sources
+        AudioPlayer.stop();
+        Providers.setActive(sourceId);
+        this.currentBook = null;
+        this.renderSourceSelector();
+        this.updateFolderSelectorVisibility();
+        await this.loadLibrary();
+    },
+
+    /** Drive shows a folder picker; manifest-based sources hide it. */
+    updateFolderSelectorVisibility() {
+        const folderSelector = document.getElementById('folder-selector');
+        if (!folderSelector) return;
+        const provider = Providers.active();
+        folderSelector.style.display = provider?.supportsBrowsing ? '' : 'none';
+    },
+
+    /**
+     * Resolve the namespaced progress key for an item.
+     * Items from R2 carry an explicit progressKey (one per book); Drive
+     * items fall back to "drive:<fileId>".
+     */
+    _itemProgressKey(item) {
+        if (!item) return null;
+        return item.progressKey || `${item.sourceId || 'drive'}:${item.key || item.id}`;
+    },
+
+    /** Convenience: read stored progress for an item. */
+    _getItemProgress(item) {
+        const key = this._itemProgressKey(item);
+        return key ? Storage.getBookProgress(key) : null;
     },
 
     /**
@@ -163,6 +234,47 @@ const App = {
                 }
             });
         });
+
+        // R2 configuration
+        const r2SaveBtn = document.getElementById('r2-save-btn');
+        const r2ClearBtn = document.getElementById('r2-clear-btn');
+        if (r2SaveBtn) r2SaveBtn.addEventListener('click', () => this.saveR2Config());
+        if (r2ClearBtn) r2ClearBtn.addEventListener('click', () => this.clearR2Config());
+    },
+
+    /** Save R2 config from the settings form. */
+    saveR2Config() {
+        const input = document.getElementById('r2-base-url');
+        const status = document.getElementById('r2-config-status');
+        const url = (input?.value || '').trim();
+        if (!url) {
+            if (status) status.textContent = 'Anna bucketin URL.';
+            return;
+        }
+        if (!/^https?:\/\//i.test(url)) {
+            if (status) status.textContent = 'URL:n pitää alkaa https://';
+            return;
+        }
+        try {
+            R2Provider.setConfig({ baseUrl: url });
+            if (status) status.textContent = 'Tallennettu. Vaihda lähteeksi Cloudflare R2.';
+            this.showToast('R2-asetukset tallennettu', 'success');
+            // If R2 is already the active source, reload library
+            if (Providers.activeId() === 'r2') this.loadLibrary();
+        } catch (e) {
+            if (status) status.textContent = 'Virhe: ' + e.message;
+        }
+    },
+
+    /** Clear R2 config. */
+    clearR2Config() {
+        R2Provider.clearConfig();
+        const input = document.getElementById('r2-base-url');
+        if (input) input.value = '';
+        const status = document.getElementById('r2-config-status');
+        if (status) status.textContent = 'Tyhjennetty.';
+        this.showToast('R2-asetukset tyhjennetty', 'info');
+        if (Providers.activeId() === 'r2') this.loadLibrary();
     },
 
     /**
@@ -186,10 +298,9 @@ const App = {
             // Show library
             this.showScreen('library');
 
-            // Load files if folder is selected
-            if (this.currentFolder) {
-                this.loadLibrary();
-            }
+            // Always try to load the active provider's library (R2 needs no
+            // folder; Drive needs a saved one).
+            this.loadLibrary();
         } else {
             this.showScreen('login');
         }
@@ -318,28 +429,74 @@ const App = {
     },
 
     /**
-     * Load library from selected folder
+     * Load library from the active storage provider.
      */
     async loadLibrary() {
-        if (!this.currentFolder) return;
-
         const content = document.getElementById('library-content');
+        const provider = Providers.active();
+        if (!provider) {
+            content.innerHTML = `<div class="empty-state"><p>Ei tallennuslähdettä valittuna</p></div>`;
+            return;
+        }
+
+        // Drive needs a selected folder; R2 (manifest-based) doesn't.
+        if (provider.supportsBrowsing && !this.currentFolder) {
+            content.innerHTML = `<div class="empty-state"><p>Valitse kansio yllä olevalla painikkeella</p></div>`;
+            return;
+        }
+
+        if (!provider.isConfigured()) {
+            content.innerHTML = `
+                <div class="empty-state" style="padding: 40px;">
+                    <p>${provider.displayName} ei ole konfiguroitu</p>
+                    <button id="open-source-settings" class="primary-btn" style="margin-top: 12px;">Avaa asetukset</button>
+                </div>`;
+            document.getElementById('open-source-settings')?.addEventListener('click', () => this.openSettings());
+            return;
+        }
+
         content.innerHTML = '<div class="picker-loading"><div class="loader"></div><p>Ladataan kirjastoa...</p></div>';
 
         try {
-            // Get library structure (books and standalone files)
-            this.library = await Drive.getLibraryStructure(this.currentFolder.id);
-            // Also get flat file list for backwards compatibility
-            this.files = await Drive.getOrganizedFiles(this.currentFolder.id);
+            const folderId = provider.supportsBrowsing ? this.currentFolder?.id : null;
+            this.library = await provider.getLibraryStructure(folderId);
+            this.files = this._deriveFlatFiles(this.library);
             this.renderLibrary();
         } catch (error) {
             console.error('Error loading library:', error);
             content.innerHTML = `
                 <div class="empty-state">
-                    <p>Virhe kirjaston lataamisessa</p>
+                    <p>Virhe kirjaston lataamisessa: ${error.message || error}</p>
                 </div>
             `;
         }
+    },
+
+    /**
+     * Build a flat file list from a normalised library — replaces the
+     * old Drive.getOrganizedFiles call so all providers can produce it
+     * from a single fetch.
+     */
+    _deriveFlatFiles(library) {
+        if (!library) return { folders: [], ebooks: [], audio: [], pdfs: [], epubs: [], archives: [] };
+        const provider = Providers.active();
+        const folders = library.folders || [];
+        const ebooks = [
+            ...(library.standaloneFiles?.ebooks || []),
+            ...(library.books || []).flatMap(b => b.ebooks || []),
+        ];
+        const audio = [
+            ...(library.standaloneFiles?.audio || []),
+            ...(library.books || []).flatMap(b => b.audioFiles || []),
+        ];
+        return {
+            folders,
+            ebooks,
+            audio,
+            pdfs: ebooks.filter(i => provider?.isPDF?.(i)),
+            epubs: ebooks.filter(i => provider?.isEPUB?.(i)),
+            archives: [],
+        };
     },
 
     /**
@@ -398,7 +555,7 @@ const App = {
         if (hasStandaloneEbooks) {
             html += '<div class="library-section"><h3>Yksittäiset kirjat</h3><div class="file-list">';
             this.library.standaloneFiles.ebooks.forEach(file => {
-                const progress = Storage.getBookProgress(file.id);
+                const progress = this._getItemProgress(file);
                 const type = Drive.isEPUB(file) ? 'epub' : 'pdf';
                 html += this.renderFileItem(file, type, progress);
             });
@@ -409,7 +566,7 @@ const App = {
         if (hasStandaloneAudio) {
             html += '<div class="library-section"><h3>Yksittäiset äänitiedostot</h3><div class="file-list">';
             this.library.standaloneFiles.audio.forEach(file => {
-                const progress = Storage.getBookProgress(file.id);
+                const progress = this._getItemProgress(file);
                 html += this.renderFileItem(file, 'audio', progress);
             });
             html += '</div></div>';
@@ -463,46 +620,69 @@ const App = {
     },
 
     /**
-     * Get last read book info
+     * Get last read book info — scoped to the active source so a switch
+     * doesn't surface a "continue reading" card pointing at the other
+     * library.
      */
     getLastReadBook() {
         const allProgress = Storage.getAllBookProgress();
         if (!allProgress || Object.keys(allProgress).length === 0) return null;
 
-        // Find most recently read
+        const activeSource = Providers.activeId();
         let lastRead = null;
         let lastTime = 0;
 
-        for (const [fileId, progress] of Object.entries(allProgress)) {
+        for (const [progressKey, progress] of Object.entries(allProgress)) {
+            const parsed = Storage.parseProgressKey(progressKey);
+            if (!parsed) continue;
+            if (parsed.sourceId !== activeSource) continue;
             if (progress.lastRead && progress.lastRead > lastTime) {
                 lastTime = progress.lastRead;
-                lastRead = { id: fileId, ...progress };
+                lastRead = { progressKey, itemKey: parsed.itemKey, ...progress };
             }
         }
 
         if (!lastRead || lastRead.percentage === 100) return null;
 
-        // Try to find the file info
-        const findFile = (id) => {
-            if (this.files?.ebooks) {
-                const ebook = this.files.ebooks.find(f => f.id === id);
-                if (ebook) return { file: ebook, type: Drive.isEPUB(ebook) ? 'epub' : 'pdf' };
+        const provider = Providers.active();
+
+        const findItem = (key) => {
+            // Search audio first (more common entry point), then ebooks,
+            // then book-level entries (for R2 HLS where progressKey == bookId).
+            const all = [
+                ...(this.files?.audio || []),
+                ...(this.files?.ebooks || []),
+            ];
+            const direct = all.find(f => f.key === key || f.id === key);
+            if (direct) {
+                let type = 'audio';
+                if (provider?.isPDF?.(direct)) type = 'pdf';
+                else if (provider?.isEPUB?.(direct)) type = 'epub';
+                return { item: direct, type };
             }
-            if (this.files?.audio) {
-                const audio = this.files.audio.find(f => f.id === id);
-                if (audio) return { file: audio, type: 'audio' };
+            // Try matching by book progressKey (R2 HLS books)
+            const book = (this.library?.books || []).find(b => b.id === key || b.progressKey === `${activeSource}:${key}`);
+            if (book) {
+                const first = (book.audioFiles?.[0]) || (book.ebooks?.[0]);
+                if (first) {
+                    const type = first.isPlaylist ? 'audio' : (provider?.isPDF?.(first) ? 'pdf' : provider?.isEPUB?.(first) ? 'epub' : 'audio');
+                    return { item: first, type, book };
+                }
             }
             return null;
         };
 
-        const fileInfo = findFile(lastRead.id);
-        if (!fileInfo) return null;
+        const hit = findItem(lastRead.itemKey);
+        if (!hit) return null;
 
+        const displayName = (hit.book?.name || hit.item.name || '').replace(/\.[^/.]+$/, '');
         return {
-            id: lastRead.id,
-            name: fileInfo.file.name.replace(/\.[^/.]+$/, ''),
-            type: fileInfo.type,
-            progressText: `${lastRead.percentage}% valmis`
+            id: hit.item.key || hit.item.id,
+            item: hit.item,
+            book: hit.book || null,
+            name: displayName,
+            type: hit.type,
+            progressText: `${lastRead.percentage}% valmis`,
         };
     },
 
@@ -541,25 +721,28 @@ const App = {
     },
 
     /**
-     * Calculate overall progress for a multi-part book
+     * Calculate overall progress for a book.
+     * - Book-level progressKey (R2 HLS): one entry covers the whole book.
+     * - Multi-part Drive books: average per-file percentages.
      */
     calculateBookProgress(book) {
+        if (book.progressKey) {
+            const p = Storage.getBookProgress(book.progressKey);
+            if (p) return p.percentage || 0;
+        }
+
         let totalProgress = 0;
         let partCount = 0;
-
         const checkProgress = (files) => {
             files.forEach(file => {
-                const progress = Storage.getBookProgress(file.id);
-                if (progress) {
-                    totalProgress += progress.percentage || 0;
-                }
+                const key = file.progressKey || `${file.sourceId || 'drive'}:${file.key || file.id}`;
+                const progress = Storage.getBookProgress(key);
+                if (progress) totalProgress += progress.percentage || 0;
                 partCount++;
             });
         };
-
         if (book.ebooks) checkProgress(book.ebooks);
         if (book.audioFiles) checkProgress(book.audioFiles);
-
         return partCount > 0 ? Math.round(totalProgress / partCount) : 0;
     },
 
@@ -600,18 +783,22 @@ const App = {
      * Setup click handlers for library items
      */
     setupLibraryClickHandlers(content) {
-        // Continue reading
+        // Continue reading — search by item key OR book id (HLS books).
         const continueCard = content.querySelector('.continue-reading');
         if (continueCard) {
             continueCard.addEventListener('click', () => {
-                const bookId = continueCard.dataset.bookId;
+                const key = continueCard.dataset.bookId;
                 const type = continueCard.dataset.type;
-                // Find file in files
                 const allFiles = [...(this.files?.ebooks || []), ...(this.files?.audio || [])];
-                const file = allFiles.find(f => f.id === bookId);
-                if (file) {
-                    this.openFile(file.id, file.name, type);
+                let item = allFiles.find(f => f.key === key || f.id === key);
+                if (!item) {
+                    const book = (this.library?.books || []).find(b => b.id === key);
+                    if (book) {
+                        this.openBook(book);
+                        return;
+                    }
                 }
+                if (item) this.openItem(item, type);
             });
         }
 
@@ -650,14 +837,12 @@ const App = {
     async openBook(book) {
         this.currentBook = book;
 
-        // Determine which part to start with (last read or first)
         let startIndex = 0;
-        let startType = book.primaryType === 'audio' ? 'audio' : 'ebook';
+        const startType = book.primaryType === 'audio' ? 'audio' : 'ebook';
 
-        // Check for saved progress
         const files = startType === 'audio' ? book.audioFiles : book.ebooks;
         for (let i = 0; i < files.length; i++) {
-            const progress = Storage.getBookProgress(files[i].id);
+            const progress = this._getItemProgress(files[i]);
             if (progress && progress.percentage < 100) {
                 startIndex = i;
                 break;
@@ -666,45 +851,87 @@ const App = {
 
         this.currentPartIndex = startIndex;
 
-        // Open the file
         const file = files[startIndex];
         const type = startType === 'audio' ? 'audio' : (Drive.isEPUB(file) ? 'epub' : 'pdf');
 
-        await this.openFile(file.id, file.name, type);
+        await this.openItem(file, type);
 
-        // Show parts button for multi-part books
         if (book.isMultiPart) {
             this.showPartsButton(startIndex + 1, files.length);
         }
     },
 
     /**
-     * Open a file
+     * Open a file. Accepts a normalised item (preferred) OR a bare Drive
+     * fileId (legacy callers from DOM data-id attributes). When given an
+     * id, we resolve it against the current library so we can recover the
+     * full item (and therefore the source provider).
      */
-    async openFile(fileId, fileName, type) {
-        this.showScreen('reader');
+    async openFile(fileIdOrItem, fileName, type) {
+        let item;
+        if (fileIdOrItem && typeof fileIdOrItem === 'object') {
+            item = fileIdOrItem;
+        } else {
+            // Legacy string-id path
+            const all = [
+                ...(this.files?.ebooks || []),
+                ...(this.files?.audio || []),
+                ...(this.currentBook?.audioFiles || []),
+                ...(this.currentBook?.ebooks || []),
+            ];
+            item = all.find(f => f.key === fileIdOrItem || f.id === fileIdOrItem)
+                || { sourceId: Providers.activeId() || 'drive', key: fileIdOrItem, name: fileName, id: fileIdOrItem };
+        }
+        return this.openItem(item, type);
+    },
 
-        // Hide all viewers first
+    /**
+     * Open an item using the right provider/viewer combo.
+     * The PDF/EPUB viewers are Drive-only (their internal API uses Drive
+     * fileIds); for other sources we toast and bail.
+     */
+    async openItem(item, typeHint) {
+        if (!item) return;
+
+        const provider = Providers.get(item.sourceId);
+        if (!provider) {
+            this.showToast('Tuntematon lähde', 'error');
+            return;
+        }
+
+        this.showScreen('reader');
         document.getElementById('pdf-viewer-container').classList.add('hidden');
         document.getElementById('epub-viewer-container').classList.add('hidden');
         document.getElementById('audio-player-container').classList.add('hidden');
 
-        if (type === 'pdf') {
-            this.currentMode = 'read';
-            document.getElementById('pdf-viewer-container').classList.remove('hidden');
-            await PDFViewer.loadFromDrive(fileId, fileName);
-        } else if (type === 'epub') {
-            this.currentMode = 'read';
-            document.getElementById('epub-viewer-container').classList.remove('hidden');
-            await EPUBViewer.loadFromDrive(fileId, fileName);
-        } else if (type === 'audio') {
+        const isAudio = typeHint === 'audio' || provider.isAudio(item);
+        const isPDF = !isAudio && (typeHint === 'pdf' || provider.isPDF(item));
+        const isEPUB = !isAudio && (typeHint === 'epub' || provider.isEPUB(item));
+
+        if (isAudio) {
             this.currentMode = 'listen';
             document.getElementById('audio-player-container').classList.remove('hidden');
-
-            // Set playlist with all audio files from current book or library
-            const audioFiles = this.currentBook?.audioFiles || this.files?.audio || [];
+            const audioFiles = this.currentBook?.audioFiles?.length
+                ? this.currentBook.audioFiles
+                : (this.files?.audio || [item]);
             AudioPlayer.setPlaylist(audioFiles);
-            await AudioPlayer.loadTrack(fileId, fileName);
+            await AudioPlayer.loadTrack(item);
+        } else if (isPDF) {
+            if (item.sourceId !== 'drive') {
+                this.showToast('PDF on tällä hetkellä tuettu vain Google Drivestä', 'info');
+                return;
+            }
+            this.currentMode = 'read';
+            document.getElementById('pdf-viewer-container').classList.remove('hidden');
+            await PDFViewer.loadFromDrive(item.key, item.name);
+        } else if (isEPUB) {
+            if (item.sourceId !== 'drive') {
+                this.showToast('EPUB on tällä hetkellä tuettu vain Google Drivestä', 'info');
+                return;
+            }
+            this.currentMode = 'read';
+            document.getElementById('epub-viewer-container').classList.remove('hidden');
+            await EPUBViewer.loadFromDrive(item.key, item.name);
         }
 
         this.updateModeIcon();
@@ -740,7 +967,7 @@ const App = {
         // Add ebook parts
         if (this.currentBook.ebooks?.length > 0) {
             this.currentBook.ebooks.forEach((file, index) => {
-                const progress = Storage.getBookProgress(file.id);
+                const progress = this._getItemProgress(file);
                 const progressText = progress ? `${progress.percentage}%` : '';
                 const isActive = PDFViewer.currentFileId === file.id || EPUBViewer.currentFileId === file.id;
 
@@ -760,7 +987,7 @@ const App = {
                 html += '<li style="padding: 8px 16px; color: var(--text-secondary); font-size: 0.8rem; border: none;">ÄÄNITIEDOSTOT</li>';
             }
             this.currentBook.audioFiles.forEach((file, index) => {
-                const progress = Storage.getBookProgress(file.id);
+                const progress = this._getItemProgress(file);
                 const progressText = progress ? `${progress.percentage}%` : '';
                 const isActive = AudioPlayer.currentFileId === file.id;
 
@@ -892,6 +1119,13 @@ const App = {
      * Open settings modal
      */
     openSettings() {
+        // Pre-fill R2 inputs from current config
+        const r2Input = document.getElementById('r2-base-url');
+        const r2Status = document.getElementById('r2-config-status');
+        const cfg = R2Provider.getConfig();
+        if (r2Input) r2Input.value = cfg?.baseUrl || '';
+        if (r2Status) r2Status.textContent = cfg ? `Asetettu: ${cfg.baseUrl}` : 'Ei konfiguroitu.';
+
         this.openModal('settings-modal');
     },
 

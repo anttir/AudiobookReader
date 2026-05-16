@@ -75,7 +75,11 @@
             </div>
         </header>
 
-        <div class="folder-selector">
+        <div class="source-selector" id="source-selector" style="display: flex; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border-color); overflow-x: auto;">
+            <!-- Source buttons injected by App.renderSourceSelector() -->
+        </div>
+
+        <div class="folder-selector" id="folder-selector">
             <button id="select-folder-btn" class="select-folder-btn">
                 <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
                 <span id="folder-name">Valitse kansio Google Drivestä</span>
@@ -258,6 +262,21 @@
                     <h4>Google Drive -kansio</h4>
                     <p id="current-folder-path">Ei valittu</p>
                     <button id="change-folder-btn" class="secondary-btn">Vaihda kansio</button>
+                </div>
+                <div class="setting-group">
+                    <h4>Cloudflare R2</h4>
+                    <p class="info-text" style="margin: 4px 0 8px 0;">Bucket public URL (R2-dashboardista, esim. <code>https://pub-xxx.r2.dev</code>).</p>
+                    <input
+                        type="url"
+                        id="r2-base-url"
+                        placeholder="https://pub-...r2.dev"
+                        style="width: 100%; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.9rem; box-sizing: border-box;"
+                    >
+                    <p id="r2-config-status" class="info-text" style="margin: 8px 0;"></p>
+                    <div style="display: flex; gap: 8px;">
+                        <button id="r2-save-btn" class="secondary-btn">Tallenna</button>
+                        <button id="r2-clear-btn" class="danger-btn">Tyhjennä</button>
+                    </div>
                 </div>
                 <div class="setting-group">
                     <h4>Tili</h4>
