@@ -184,6 +184,9 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
             cover: entry.cover ? this._absUrl(entry.cover) : null,
             duration: entry.duration,
             progressKey,
+            // Optional manifest fields surfaced for UI / MediaSession.
+            author: entry.author || null,
+            narrator: entry.narrator || null,
         };
     },
 

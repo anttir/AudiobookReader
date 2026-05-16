@@ -117,14 +117,20 @@ const AudioPlayer = {
     _normaliseItem(input) {
         if (!input) return null;
         if (input.sourceId && input.key) {
+            // Already normalised — cover/progressKey pass through as-is.
             return input;
         }
-        // Legacy Drive file shape (or audioFile with .id but no sourceId)
+        // Legacy Drive file shape (or audioFile with .id but no sourceId).
+        // Propagate cover + progressKey when the caller already supplied
+        // them so downstream (loadTrack, updateMediaSession, saveProgress)
+        // can pick them up uniformly.
         return {
             sourceId: 'drive',
             key: input.id,
             name: input.name,
             mimeType: input.mimeType,
+            cover: input.cover,
+            progressKey: input.progressKey,
             // preserve legacy fields for any consumer that still reads them
             id: input.id,
         };
@@ -213,6 +219,12 @@ const AudioPlayer = {
         document.getElementById('current-time').textContent = '0:00';
         document.getElementById('duration').textContent = '';
 
+        // Album cover: prefer the item's own cover, then fall back to the
+        // active book (R2 attaches the cover URL at book level, not on
+        // each audio item). If neither exists, hide the <img> and let the
+        // default SVG show through.
+        this._renderAlbumCover(item.cover || (typeof App !== 'undefined' ? App.currentBook?.cover : null));
+
         this.showLoading(true, 'Ladataan: ' + displayName);
 
         try {
@@ -246,7 +258,7 @@ const AudioPlayer = {
                 }
             }
 
-            this.updateMediaSession(item.name || '');
+            this.updateMediaSession(item);
             this.isLoading = false;
             this.showLoading(false);
             return true;
@@ -381,16 +393,47 @@ const AudioPlayer = {
     },
 
     /**
-     * Update Media Session metadata
+     * Swap the <img id="album-cover"> source and toggle the .hidden class
+     * so the default SVG art stays visible when no cover is available.
      */
-    updateMediaSession(title) {
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.metadata = new MediaMetadata({
-                title: this.cleanFileName(title),
-                artist: 'AudioBook Reader',
-                album: 'Äänikirja'
-            });
+    _renderAlbumCover(coverUrl) {
+        const img = document.getElementById('album-cover');
+        if (!img) return;
+        if (coverUrl) {
+            // Only reassign when it actually changes to avoid a refetch
+            // (and a brief flash) when re-loading the same track.
+            if (img.getAttribute('src') !== coverUrl) {
+                img.src = coverUrl;
+            }
+            img.classList.remove('hidden');
+        } else {
+            img.classList.add('hidden');
+            img.removeAttribute('src');
         }
+    },
+
+    /**
+     * Update Media Session metadata. Accepts the normalised item so we can
+     * source artwork from item.cover (or the active book's cover) and use
+     * the book's author/name for the OS-level "Artist / Album" display.
+     */
+    updateMediaSession(item) {
+        if (!('mediaSession' in navigator)) return;
+
+        const book = (typeof App !== 'undefined') ? App.currentBook : null;
+        const title = this.cleanFileName(item?.name || '');
+        const artist = book?.author || 'AudioBook Reader';
+        const album = book?.name || 'Äänikirja';
+        const coverUrl = item?.cover || book?.cover || null;
+
+        const meta = { title, artist, album };
+        if (coverUrl) {
+            meta.artwork = [
+                { src: coverUrl, sizes: '512x512', type: 'image/jpeg' },
+                { src: coverUrl, sizes: '256x256', type: 'image/jpeg' },
+            ];
+        }
+        navigator.mediaSession.metadata = new MediaMetadata(meta);
     },
 
     /**

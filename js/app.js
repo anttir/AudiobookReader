@@ -719,10 +719,16 @@ const App = {
             ? `${book.ebookCount + book.audioCount} osaa`
             : '';
 
+        // Prefer a real cover image (R2 books expose `cover` as a full URL
+        // built from the manifest entry); fall back to the format SVG.
+        const coverArt = book.cover
+            ? `<img src="${book.cover}" alt="" loading="lazy" decoding="async">`
+            : typeIcon;
+
         return `
             <div class="book-card" data-book-id="${book.id}" data-book-type="${book.primaryType}">
                 <div class="book-cover">
-                    ${typeIcon}
+                    ${coverArt}
                     ${book.primaryType === 'both' ? '<span class="book-type-badge">Kirja + Audio</span>' : ''}
                     ${partsText ? `<span class="parts-indicator">${partsText}</span>` : ''}
                     <div class="book-progress">

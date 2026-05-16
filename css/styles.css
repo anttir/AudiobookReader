@@ -576,16 +576,20 @@ body {
     overflow: hidden;
     box-shadow: var(--shadow-lg);
     margin-bottom: 30px;
+    position: relative;
 }
 
-.default-art {
+/* Both the default SVG and the cover <img> fill the box; the img sits on
+   top via DOM order. Toggling .hidden on the img reveals the SVG. */
+.album-art .default-art,
+.album-art img {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
 }
 
 .album-art img {
-    width: 100%;
-    height: 100%;
     object-fit: cover;
 }
 
