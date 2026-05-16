@@ -438,10 +438,21 @@ const DriveProvider = Object.assign(Object.create(ProviderBase), {
         const appId = (CONFIG.GOOGLE_CLIENT_ID || '').split('-')[0];
 
         return new Promise((resolve) => {
-            const view = new google.picker.DocsView()
+            // Anchor at My Drive root so the user gets a navigable hierarchy
+            // instead of Picker's default flat "all folders" list.
+            const myDrive = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
                 .setIncludeFolders(true)
                 .setSelectFolderEnabled(true)
-                .setMimeTypes('application/vnd.google-apps.folder');
+                .setMimeTypes('application/vnd.google-apps.folder')
+                .setParent('root')
+                .setOwnedByMe(true);
+
+            // Second tab for "Shared with me" — same setup but other-owned.
+            const shared = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+                .setIncludeFolders(true)
+                .setSelectFolderEnabled(true)
+                .setMimeTypes('application/vnd.google-apps.folder')
+                .setOwnedByMe(false);
 
             const picker = new google.picker.PickerBuilder()
                 .setTitle('Valitse kirjojen kansio')
@@ -449,7 +460,8 @@ const DriveProvider = Object.assign(Object.create(ProviderBase), {
                 .setDeveloperKey(CONFIG.GOOGLE_API_KEY)
                 .setAppId(appId)
                 .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
-                .addView(view)
+                .addView(myDrive)
+                .addView(shared)
                 .setCallback((data) => {
                     const action = data[google.picker.Response.ACTION];
                     if (action === google.picker.Action.PICKED) {
