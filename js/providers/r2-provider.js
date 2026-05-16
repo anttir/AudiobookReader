@@ -82,13 +82,45 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
         return `${this._baseUrl()}/${String(key).replace(/^\/+/, '')}`;
     },
 
+    /**
+     * Returns true if the configured base URL is a plain public
+     * `pub-<hash>.r2.dev` endpoint — that URL ignores Authorization
+     * headers and, more importantly, its CORS rules typically don't
+     * allow them, so we MUST NOT send Bearer tokens to it (preflight
+     * would fail). Anything else (Workers URL, custom domain) is
+     * assumed to be the r2-auth-worker proxy or similar and gets the
+     * token.
+     */
+    _isPublicR2() {
+        const base = this.getConfig()?.baseUrl || '';
+        return /\/\/pub-[0-9a-f]+\.r2\.dev/i.test(base);
+    },
+
+    /**
+     * Google access token, if signed in AND the base URL is not a plain
+     * public R2 endpoint. Used by both the `Authorization` header on
+     * fetch/XHR (R2-auth-worker proxy) and the `?_token=` query param
+     * when URLs end up in <audio src> / <img src> where headers can't
+     * be set.
+     */
+    _accessToken() {
+        if (this._isPublicR2()) return null;
+        if (typeof Auth === 'undefined') return null;
+        return Auth.getAccessToken?.() || null;
+    },
+
+    _authHeaders() {
+        const token = this._accessToken();
+        return token ? { 'Authorization': `Bearer ${token}` } : {};
+    },
+
     // --- manifest ----------------------------------------------------------
 
     async _fetchManifest() {
         const url = this._absUrl(this.R2_INDEX_PATH);
         // cache: 'no-cache' so book additions surface without forcing the user
         // to hard-refresh; the file is small.
-        const resp = await fetch(url, { cache: 'no-cache' });
+        const resp = await fetch(url, { cache: 'no-cache', headers: this._authHeaders() });
         if (!resp.ok) {
             throw new Error(`R2 manifest fetch failed (${resp.status}). URL: ${url}`);
         }
@@ -170,12 +202,20 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
     // --- playback ----------------------------------------------------------
 
     async getStreamUrl(item) {
-        return this._absUrl(item.key);
+        const url = this._absUrl(item.key);
+        // HLS goes through hls.js, which sets the Authorization header via
+        // xhrSetup (see AudioPlayer._loadHls). For everything else the URL
+        // ends up in <audio src> / <img src> where headers can't be set,
+        // so we fall back to a `?_token=` query param the worker also
+        // accepts.
+        if (this.isHLSPlaylist(item)) return url;
+        const token = this._accessToken();
+        return token ? `${url}?_token=${encodeURIComponent(token)}` : url;
     },
 
     async downloadAsBlob(item, onProgress) {
         const url = this._absUrl(item.key);
-        const resp = await fetch(url);
+        const resp = await fetch(url, { headers: this._authHeaders() });
         if (!resp.ok) throw new Error(`R2 fetch failed: ${resp.status}`);
 
         const contentLength = resp.headers.get('content-length');

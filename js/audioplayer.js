@@ -301,18 +301,40 @@ const AudioPlayer = {
                 maxBufferLength: 30,
                 maxMaxBufferLength: 60,
                 lowLatencyMode: false,
+                // Forward the Google access token on every HLS request so
+                // the optional r2-auth-worker proxy can authorise it.
+                // Suppressed when the URL is a public pub-*.r2.dev bucket —
+                // its CORS rules don't allow the Authorization header, so
+                // sending it would break the preflight.
+                xhrSetup: function (xhr, requestUrl) {
+                    if (typeof Auth === 'undefined') return;
+                    const token = Auth.getAccessToken?.();
+                    if (!token) return;
+                    if (/\/\/pub-[0-9a-f]+\.r2\.dev/i.test(requestUrl)) return;
+                    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                },
             });
             this.hls.on(window.Hls.Events.ERROR, (_event, data) => {
-                if (data.fatal) {
-                    console.error('HLS fatal error:', data);
+                if (!data.fatal) return;
+                console.error('HLS fatal error:', data);
+                // Surface auth failures with a clearer message — most often
+                // a stale token (>1h since sign-in).
+                const status = data.response?.code;
+                if (status === 401 || status === 403) {
+                    App.showToast('R2: kirjautuminen vanhentui, kirjaudu uudelleen', 'error');
+                } else {
                     App.showToast('HLS-virhe: ' + (data.details || 'tuntematon'), 'error');
                 }
             });
             this.hls.loadSource(url);
             this.hls.attachMedia(this.audio);
         } else if (this.audio.canPlayType('application/vnd.apple.mpegurl')) {
-            // Safari has native HLS
-            this.audio.src = url;
+            // Safari has native HLS — token must travel in the URL since
+            // <audio src> can't carry headers.
+            const token = (typeof Auth !== 'undefined') ? Auth.getAccessToken?.() : null;
+            this.audio.src = token
+                ? `${url}${url.includes('?') ? '&' : '?'}_token=${encodeURIComponent(token)}`
+                : url;
         } else {
             throw new Error('HLS-toistoa ei tueta tässä selaimessa');
         }

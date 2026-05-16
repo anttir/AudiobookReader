@@ -6,7 +6,7 @@
       "https://anttir.github.io"
     ],
     "AllowedMethods": ["GET", "HEAD"],
-    "AllowedHeaders": ["Range", "Content-Type"],
+    "AllowedHeaders": ["Range", "Content-Type", "Authorization"],
     "ExposeHeaders": ["Content-Length", "Content-Range", "Accept-Ranges", "ETag"],
     "MaxAgeSeconds": 3600
   }
