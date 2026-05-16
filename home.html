@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AudioBook Reader — etusivu</title>
+    <meta name="description" content="Lue ja kuuntele kirjojasi Google Drivestä. PWA, jossa PDF, EPUB ja äänikirjat samassa paikassa.">
+    <meta name="theme-color" content="#1a1a2e">
+    <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+    <link rel="stylesheet" href="css/legal.css">
+</head>
+<body>
+    <div class="page">
+        <header class="page-header">
+            <img src="assets/icon-1024.png" alt="AudioBook Reader -logo">
+            <div>
+                <h1>AudioBook Reader</h1>
+                <p>Lue ja kuuntele kirjojasi Google Drivestä</p>
+            </div>
+        </header>
+
+        <main>
+            <p>
+                AudioBook Reader on selainpohjainen progressiivinen web-sovellus (PWA),
+                jolla luet PDF- ja EPUB-kirjasi ja kuuntelet äänikirjasi samassa
+                näkymässä — sieltä missä ne jo ovat, oman Google Drive -tilisi
+                takana. Sovellus on suunniteltu henkilökohtaiseen käyttöön, eikä se
+                lataa kirjoja omille palvelimilleen.
+            </p>
+
+            <a class="cta" href="./">Avaa sovellus →</a>
+
+            <h2>Ominaisuudet</h2>
+            <ul class="features">
+                <li>
+                    <strong>PDF + EPUB</strong>
+                    <span>Lukijat saman kirjaston alla, sivunavigointi, zoom, teema.</span>
+                </li>
+                <li>
+                    <strong>Äänikirjat</strong>
+                    <span>MP3, M4A, M4B sekä HLS-suoratoisto. Lukukohta tallentuu.</span>
+                </li>
+                <li>
+                    <strong>Google Drive</strong>
+                    <span>Valitset itse kansion Google Pickerillä — vain se on appin näkyvissä.</span>
+                </li>
+                <li>
+                    <strong>Synkronointi laitteiden välillä</strong>
+                    <span>Lukukohta seuraa mukana Drive-appdatan kautta.</span>
+                </li>
+                <li>
+                    <strong>PWA</strong>
+                    <span>Asennettavissa työpöydälle / kotinäytölle. Toimii offline kun media on välimuistissa.</span>
+                </li>
+                <li>
+                    <strong>Tumma / vaalea / sepia</strong>
+                    <span>Lukuteemat ja säädettävä fonttikoko.</span>
+                </li>
+            </ul>
+
+            <h2>Tietoturva</h2>
+            <p>
+                Sovellus pyytää Google Drive -käyttöoikeuden vain niihin
+                kansioihin/tiedostoihin, jotka itse valitset Google Pickerin
+                kautta (<code>drive.file</code>-scope). Edistymistieto tallennetaan
+                selaimesi paikalliseen muistiin ja oman Drive-tilisi yksityiseen
+                appdata-kansioon. Lue lisää
+                <a href="privacy.html">tietosuojaselosteesta</a>.
+            </p>
+
+            <h2>Lähdekoodi</h2>
+            <p>
+                Sovellus on staattisena sivustona GitHub Pagesissa.
+                <a href="https://github.com/anttir/AudiobookReader" target="_blank" rel="noopener">github.com/anttir/AudiobookReader</a>
+            </p>
+        </main>
+
+        <footer>
+            <a href="./">Sovellus</a>
+            <a href="privacy.html">Tietosuoja</a>
+            <a href="terms.html">Käyttöehdot</a>
+            <a href="mailto:antti.rasi@gmail.com">Yhteys</a>
+        </footer>
+    </div>
+</body>
+</html>
