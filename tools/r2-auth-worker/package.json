@@ -1,0 +1,14 @@
+{
+  "name": "audiobookreader-r2-auth-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker proxy that gates a private R2 bucket behind Google Sign-In",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}
