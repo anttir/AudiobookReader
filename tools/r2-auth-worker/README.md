@@ -11,6 +11,13 @@ After this is deployed the Worker URL replaces the `pub-*.r2.dev` URL in
 the web app's R2 settings — so the bucket can be flipped to private
 and the repo + Worker URL can stay public.
 
+> **Currently deployed:** `https://audiobookreader-r2.audiobooks.workers.dev`.
+> This is the URL hardcoded as `CONFIG.R2_DEFAULT_BASE_URL` in
+> [`js/config.js`](../../js/config.js); the live app at
+> [https://anttir.github.io/AudiobookReader/](https://anttir.github.io/AudiobookReader/)
+> reads through this Worker. Public access on the `audiobooks` bucket is
+> disabled — there is no fallback URL.
+
 ## How it talks to R2
 
 The Worker is bound directly to the R2 bucket (`BUCKET` binding in

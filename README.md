@@ -4,6 +4,15 @@ Web-sovellus PDF- ja EPUB-kirjojen lukemiseen sekä äänikirjojen kuunteluun. T
 tallennuslähteitä: **Google Drive** (kokonaislataus, kaikki tuetut formaatit) ja
 **Cloudflare R2** (HLS-streaming + natiivit audiotiedostot, valinnaisesti Google-SSO -suojattu).
 
+## 🌐 Live
+
+**Käytössä osoitteessa: [https://anttir.github.io/AudiobookReader/](https://anttir.github.io/AudiobookReader/)**
+
+Julkaistu GitHub Pagesilla suoraan `main`-branchista — jokainen `git push origin main` triggaa
+automaattisen uudelleenjulkaisun (~30 s). Live-versiossa R2-lähde toimii heti Google-loginin
+jälkeen, koska oletusarvoinen Worker-URL on hardkoodattu `js/config.js`:ään (`R2_DEFAULT_BASE_URL`).
+R2-sisältö on auth-workerin takana ja vain allowlist-sähköposteille avoinna.
+
 ## Ominaisuudet
 
 - **Google-kirjautuminen** - Kirjaudu sisään Google-tililläsi
@@ -92,6 +101,12 @@ Voit myös yhdistää molempia - kansiot tunnistetaan kirjoiksi ja yksittäiset 
 
 ## Asennus ja käyttöönotto
 
+> Tämä osio on **fork-ohjeet**: omat Google OAuth -credentiaalit, oma R2-bucket, oma Pages-URL.
+> Jos vain haluat käyttää valmista versiota, mene
+> [https://anttir.github.io/AudiobookReader/](https://anttir.github.io/AudiobookReader/) ja
+> kirjaudu Googlella. R2-äänikirjat näkyvät vain `[antti.rasi, anuhynninen2]@gmail.com`
+> -tileille (auth-workerin allowlist).
+
 ### Vaihe 1: Luo Google Cloud -projekti
 
 1. Mene [Google Cloud Console](https://console.cloud.google.com/)
@@ -163,6 +178,11 @@ const CONFIG = {
 ---
 
 ## Hostaus
+
+> **Tämä repo on jo julkaistu osoitteessa
+> [https://anttir.github.io/AudiobookReader/](https://anttir.github.io/AudiobookReader/)**.
+> Allaolevat ohjeet ovat sinulle, joka haluaa forkata oman kopion. Pushaaminen `main`:iin
+> deployaa uuden version Pagesiin ~30 s sisällä — ei manuaalista deploy-stepiä.
 
 ### Vaihtoehto A: Paikallinen kehityspalvelin (testaus)
 

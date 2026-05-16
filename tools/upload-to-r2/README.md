@@ -27,12 +27,17 @@ picks up the new book.
 
 ### 2. Configure CORS
 
+> **Skip this** if you're using the auth-worker proxy (the worker handles
+> its own CORS and the live deployment runs that way). Bucket-level CORS
+> only matters when the app talks directly to a public R2 URL — which is
+> off in the current production setup.
+
 In the bucket settings → **CORS Policy**, paste the contents of
 [`cors.json`](cors.json). Adjust `AllowedOrigins` for your deployment:
 
 - `http://localhost:8000` / `http://127.0.0.1:8000` — local dev server
-- `https://<username>.github.io` — GitHub Pages
-- any custom domain you serve the app from
+- `https://anttir.github.io` — current production
+- any custom domain you serve a fork from
 
 Without CORS the browser will refuse to fetch the playlist + segments and
 hls.js will fail with a network error.

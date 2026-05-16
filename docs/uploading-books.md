@@ -6,6 +6,23 @@ AudiobookReader R2 backend. Any tool — the reference
 script, a future second uploader, manual uploads via the R2 dashboard —
 must follow it to produce a book that the web app can find and play.
 
+**Live consumer of this manifest:**
+[`https://anttir.github.io/AudiobookReader/`](https://anttir.github.io/AudiobookReader/)
+— a published book shows up there for allowlisted Google accounts within
+seconds of the manifest upload. Self-hosted forks of the app are
+identical readers; they consume the same manifest shape.
+
+**Live infra:**
+
+| | URL | Purpose |
+|---|---|---|
+| Web app | `https://anttir.github.io/AudiobookReader/` | PWA, served as static files from `main` branch |
+| R2 bucket | `audiobooks` (private — `pub-*.r2.dev` disabled) | content storage |
+| Auth worker | `https://audiobookreader-r2.audiobooks.workers.dev` | Google-token-gated read proxy |
+| Allowlist | `antti.rasi@gmail.com, anuhynninen2@gmail.com` | Who can play content (configured in [`tools/r2-auth-worker/wrangler.toml`](../tools/r2-auth-worker/wrangler.toml)) |
+
+Uploaders bypass the worker; they hit the R2 S3 API with admin credentials.
+
 ## TL;DR
 
 ```
