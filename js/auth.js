@@ -67,6 +67,7 @@ const Auth = {
             return;
         }
 
+        const isRefresh = !!this.accessToken;
         this.accessToken = response.access_token;
         Storage.setAccessToken(this.accessToken);
 
@@ -76,6 +77,14 @@ const Auth = {
         this._expiresAt = Date.now() + lifetimeMs;
         Storage.set(this.EXPIRES_AT_STORAGE_KEY, this._expiresAt);
         this._scheduleAutoRefresh();
+
+        // Surface refresh success so a user looking at the console knows
+        // the silent flow actually worked (and the "Blocked script
+        // execution in 'about:srcdoc'" warning from GIS's hidden iframe
+        // was the benign side-effect everyone reports).
+        if (isRefresh) {
+            console.info(`[auth] token refreshed silently (expires in ${Math.round(lifetimeMs/60000)}min)`);
+        }
 
         // If this was a silent refresh (we already had a user object),
         // skip the userinfo round-trip — Google didn't give us anything
