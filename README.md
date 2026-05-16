@@ -1,21 +1,48 @@
 # AudioBook Reader
 
-Web-sovellus PDF- ja EPUB-kirjojen lukemiseen sekä äänikirjojen kuunteluun suoraan Google Drivestä.
+Web-sovellus PDF- ja EPUB-kirjojen lukemiseen sekä äänikirjojen kuunteluun. Tukee useita
+tallennuslähteitä: **Google Drive** (kokonaislataus, kaikki tuetut formaatit) ja
+**Cloudflare R2** (HLS-streaming + natiivit audiotiedostot, valinnaisesti Google-SSO -suojattu).
 
 ## Ominaisuudet
 
 - **Google-kirjautuminen** - Kirjaudu sisään Google-tililläsi
+- **Monilähdetuki** - Vaihda lähde-tabista Google Drive ↔ Cloudflare R2 ↔ (jatkossa) muut
 - **Google Drive -integraatio** - Lue tiedostoja suoraan Drivestäsi
+- **Cloudflare R2 + HLS-streaming** - Pitkät äänikirjat alkavat soida ~1 s sisällä ilman
+  koko tiedoston esi-latausta; valinnainen [auth-worker](tools/r2-auth-worker) sitoo
+  pääsyn Google-tiliin
 - **PDF-lukija** - Lue PDF-kirjoja selaimessa
 - **EPUB-lukija** - Lue EPUB-muotoisia e-kirjoja
-- **Äänisoitin** - Kuuntele äänikirjoja (MP3, M4A, M4B, WAV, OGG, FLAC, AAC, OPUS)
+- **Äänisoitin** - Kuuntele äänikirjoja (MP3, M4A, M4B, WAV, OGG, FLAC, AAC, OPUS, HLS)
 - **Moniosainen kirja -tuki** - Kansio = yksi kirja, jossa voi olla useita osia
-- **Edistymisen tallennus** - Sovellus muistaa missä kohtaa olit (TÄRKEIN TOIMINTO!)
+- **Edistymisen tallennus** - Sovellus muistaa missä kohtaa olit (TÄRKEIN TOIMINTO!),
+  lähdekohtaisilla avaimilla (`drive:fileId`, `r2:bookId`) jotta sama nimi ei törmää eri
+  lähteissä
 - **Jatka lukemista** - Näyttää viimeksi luetun kirjan kirjastossa
 - **Kuuntelunopeus** - Säädä toiston nopeutta (0.5x - 2x)
 - **Tumma/vaalea/seepia teema** - Valitse mieleisesi ulkoasu
 - **Mobiiliystävällinen** - Toimii myös puhelimella
 - **PWA-tuki** - Voit "asentaa" sovelluksen puhelimeesi
+
+## Tallennuslähteet & arkkitehtuuri
+
+Jokainen lähde on yksittäinen luokka `js/providers/`-hakemistossa joka toteuttaa
+yhteisen `ProviderBase`-rajapinnan (`getLibraryStructure`, `getStreamUrl`,
+`downloadAsBlob`, kapasiteettiliput `supportsHLS` / `supportsByteRange`). Uuden
+lähteen lisääminen on uusi tiedosto providers-hakemistoon ja yksi rivi
+`registry.js`:ään.
+
+### Kirjojen lisääminen R2:een
+
+📖 **[docs/uploading-books.md](docs/uploading-books.md)** on kanoninen spec:
+bucket-rakenne, `index.json`-manifestin skeema, HLS-playlistin vaatimukset,
+S3-credentiaalit, content-typet ja yleiset operaatiot (lisäys, uudelleennimeäminen,
+poisto). Linkitä tähän kun ohjeistat tooleja tai toisia agentteja.
+
+Referenssitoteutus uploadille: [tools/upload-to-r2/](tools/upload-to-r2/)
+(Python + boto3). Referenssitoteutus suojatulle luvulle:
+[tools/r2-auth-worker/](tools/r2-auth-worker/) (Cloudflare Worker, Google-token-validointi).
 
 ## Tuetut tiedostomuodot
 

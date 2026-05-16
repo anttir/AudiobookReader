@@ -1,8 +1,15 @@
 # upload-to-r2
 
-Uploads an HLS audiobook (playlist + .ts segments) to a Cloudflare R2 bucket
-and updates the bucket's `index.json` manifest. The web app reads that
-manifest to discover books — no S3 LIST permission required at read time.
+Reference implementation of an HLS audiobook uploader for the
+AudiobookReader R2 backend. Uploads playlist + .ts segments + optional
+cover, then updates the bucket's `index.json` manifest so the web app
+picks up the new book.
+
+> **Writing your own uploader?** Read
+> [`docs/uploading-books.md`](../../docs/uploading-books.md) first — it
+> documents the bucket layout, manifest schema, content-types,
+> conventions and gotchas that any uploader (this script, a future
+> alternative, or a manual flow) must follow.
 
 ## One-time R2 setup
 
