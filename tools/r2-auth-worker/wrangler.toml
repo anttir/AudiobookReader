@@ -19,7 +19,7 @@ bucket_name = "audiobooks"
 
 [vars]
 GOOGLE_CLIENT_ID = "524735149839-e3pfcqlji0ij1f45tpf3af2ivqkosdgg.apps.googleusercontent.com"
-ALLOWED_EMAILS = "antti.rasi@gmail.com,anuhynninen2@gmail.com"
+ALLOWED_EMAILS = "antti.rasi@gmail.com,anu.hynninen2@gmail.com"
 CORS_ALLOWED_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000,https://anttir.github.io"
 
 # Optional: observability — uncomment to enable Tail logs in the dashboard
