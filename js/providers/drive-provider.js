@@ -491,7 +491,11 @@ const DriveProvider = Object.assign(Object.create(ProviderBase), {
                         resolve(doc ? { id: doc.id, name: doc.name } : null);
                     } else if (action === google.picker.Action.CANCEL) {
                         resolve(null);
+                    } else if (action === google.picker.Action.ERROR) {
+                        console.error('Picker error:', data);
+                        resolve(null);
                     }
+                    // LOADED ja muut välitilat ohitetaan
                 })
                 .build();
             picker.setVisible(true);

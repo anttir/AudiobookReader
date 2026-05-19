@@ -66,14 +66,15 @@
             <ul>
                 <li><strong>Selaimesi paikallinen muisti</strong> (<code>localStorage</code>):
                     asetukset (teema, fonttikoko, jne.), kirjautumisistunnon
-                    voimassaoleva token sekä lukukohtien välimuisti.</li>
+                    voimassa oleva token sekä lukukohtien välimuisti.</li>
                 <li><strong>Sinun oma Google Drive</strong>: appdata-kansiossa oleva
                     pieni JSON-tiedosto, johon lukukohdat synkronoidaan.</li>
                 <li><strong>Sovelluksen ylläpitäjän hallinnoima Cloudflare R2 -säilytys</strong>
                     (valinnainen lähde): jos käytät R2-kirjastoa, äänitiedostot
                     luetaan auth-välityspalvelimen kautta. Pyyntöjen yhteydessä
                     välitetään Googlen access token, jota palvelin käyttää vain
-                    pyytäjän sähköpostin tarkistamiseen sallittuja vastaan.
+                    tarkistaakseen, onko pyytäjän sähköposti sallittujen
+                    osoitteiden listalla.
                     Tunnus ei tallennu palvelimelle pidempään kuin 5 minuutin
                     välimuistin verran.</li>
             </ul>

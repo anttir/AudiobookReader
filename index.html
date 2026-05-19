@@ -9,6 +9,13 @@
     <meta name="theme-color" content="#1a1a2e">
     <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
 
+    <!-- iOS PWA: Safari "Lisää koti-valikkoon" -tilaa varten. iOS ei lue
+         manifestin näitä kenttiä tai SVG-ikonia, joten ne tarvitaan erikseen. -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="AudioBook">
+    <link rel="apple-touch-icon" href="assets/icon-1024.png">
+
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 

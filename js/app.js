@@ -418,6 +418,8 @@ const App = {
                 this.currentFolder = null;
                 Storage.setSelectedFolder(null);
                 document.getElementById('folder-name').textContent = 'Valitse kansio Google Drivestä';
+                const pathEl = document.getElementById('current-folder-path');
+                if (pathEl) pathEl.textContent = 'Ei valittu';
                 content.innerHTML = `
                     <div class="empty-state" style="padding: 40px;">
                         <p>Kansiota ei löydy tai siihen ei ole pääsyä. Valitse kansio uudelleen Pickeristä.</p>
@@ -702,8 +704,7 @@ const App = {
         if (parts.length > 0) {
             let max;
             for (const part of parts) {
-                const key = part.progressKey || `${part.sourceId || 'drive'}:${part.key || part.id}`;
-                const p = Storage.getBookProgress(key);
+                const p = this._getItemProgress(part);
                 if (p?.lastRead && (max === undefined || p.lastRead > max)) {
                     max = p.lastRead;
                 }
@@ -712,8 +713,7 @@ const App = {
         }
 
         // Standalone file.
-        const key = item.progressKey || `${item.sourceId || 'drive'}:${item.key || item.id}`;
-        const p = Storage.getBookProgress(key);
+        const p = this._getItemProgress(item);
         return p?.lastRead;
     },
 
