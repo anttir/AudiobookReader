@@ -15,15 +15,27 @@ const CONFIG = {
     GOOGLE_API_KEY: 'AIzaSyDSim0N9T9HFinPha7KoQcUgkY9muTECTE',
 
     // Google Drive API scopes.
-    // - drive.file: per-file/folder access for items the user picks via
-    //   Google Picker (or that the app creates). Non-sensitive scope —
-    //   no Google verification needed to publish the OAuth app.
+    // - drive.readonly: read-only access to all of the user's Drive
+    //   files. We need this (instead of the non-sensitive drive.file
+    //   scope) because Google Picker with drive.file cannot list the
+    //   children of a picked folder — by design, drive.file only
+    //   grants per-item access to files the user explicitly picks,
+    //   so folder navigation produces an empty listing. This app is
+    //   folder-based (the user picks a folder containing audiobooks
+    //   / ebooks and we enumerate the contents), so drive.readonly
+    //   is required for the core flow to work.
+    //
+    //   This is a sensitive scope, so the OAuth client must stay in
+    //   Testing mode in Google Cloud Console (or go through Google's
+    //   verification process if you want to publish it). Personal use
+    //   with the developer's account + a handful of test users is
+    //   fine in Testing mode.
     // - drive.appdata: private per-app folder used by Sync to store
     //   listening progress across devices (invisible to the user via
     //   the Drive UI, only this app sees it)
     // - userinfo.*: profile + email for the sign-in UI
     SCOPES: [
-        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/drive.readonly',
         'https://www.googleapis.com/auth/drive.appdata',
         'https://www.googleapis.com/auth/userinfo.profile',
         'https://www.googleapis.com/auth/userinfo.email'

@@ -348,6 +348,42 @@ body {
     object-fit: cover;
 }
 
+/* Cover slot — <img> sits on top of the SVG fallback. When the image has
+   loaded (.cover-loaded), it covers the fallback. While a lazy cover has
+   not loaded yet, the <img> is invisible so the SVG shows through. */
+.book-cover .cover-img,
+.row-cover .cover-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+.book-cover .cover-img.cover-loaded,
+.row-cover .cover-img.cover-loaded {
+    opacity: 1;
+}
+.book-cover .cover-fallback,
+.row-cover .cover-fallback {
+    fill: white;
+    opacity: 0.8;
+}
+.book-cover .cover-fallback-small {
+    width: 20px;
+    height: 20px;
+}
+.book-cover-folder {
+    background: linear-gradient(135deg, #b87f1e, #f39c12);
+}
+.book-cover-audio {
+    background: linear-gradient(135deg, var(--bg-tertiary), var(--accent));
+}
+.book-cover-pdf {
+    background: linear-gradient(135deg, #8a3329, #e74c3c);
+}
+
 .book-progress {
     position: absolute;
     bottom: 0;
@@ -1492,4 +1528,123 @@ body {
     width: 16px;
     height: 16px;
     fill: currentColor;
+}
+
+/* Library toolbar (sort dropdown + view toggle).
+   Lives at the top of the library content area; both controls share a row. */
+.library-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 4px 16px;
+    flex-wrap: wrap;
+}
+.library-toolbar-label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+.library-sort-select {
+    flex: 1;
+    max-width: 320px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+.library-toolbar-spacer {
+    flex: 1;
+}
+
+/* View toggle — segmented control with two icon buttons. */
+.view-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-secondary);
+}
+.view-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 32px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: background var(--transition), color var(--transition);
+}
+.view-toggle-btn + .view-toggle-btn {
+    border-left: 1px solid var(--border-color);
+}
+.view-toggle-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+.view-toggle-btn.active {
+    background: var(--accent);
+    color: white;
+}
+.view-toggle-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+}
+
+/* Row thumbnail — small 2:3 cover box used by file-item rows and book-rows
+   in Details view. Mirrors .book-cover layering. */
+.row-cover {
+    position: relative;
+    width: 40px;
+    height: 60px;
+    flex: 0 0 auto;
+    border-radius: 4px;
+    overflow: hidden;
+    background: linear-gradient(135deg, var(--bg-tertiary), var(--accent));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Book as a list row (Details view). Shares .book-card so click handlers
+   pick it up, but flexes horizontally instead of stacking. */
+.book-card.book-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    transition: background var(--transition);
+}
+.book-card.book-row:hover {
+    background: var(--bg-tertiary);
+    transform: none;
+    box-shadow: var(--shadow);
+}
+
+/* Slim inline progress bar used by row variants. */
+.row-progress {
+    width: 60px;
+    height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+    flex: 0 0 auto;
+}
+.row-progress-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+}
+
+/* Folder-as-card (Icons view) — book-card sized, but with a flat folder
+   gradient instead of a cover image. */
+.book-card.folder-card .book-cover {
+    background: linear-gradient(135deg, #b87f1e, #f39c12);
 }

@@ -215,9 +215,14 @@ const DriveProvider = Object.assign(Object.create(ProviderBase), {
     _groupRelatedFiles(files) {
         const groups = {};
         files.forEach(file => {
+            // Strip part/chapter markers like "osa 1", "chapter 3", "del 2".
+            // The \b word boundaries are CRITICAL: without them, "del" would
+            // match inside "Mandela", "osa" inside "Yarosa", "luku" inside
+            // "Calluku", incorrectly merging unrelated books. \b ensures the
+            // marker is a standalone word.
             let baseName = file.name
                 .replace(/\.[^/.]+$/, '')
-                .replace(/[\s_-]*(osa|part|del|chapter|kappale|luku)[\s_-]*\d+/gi, '')
+                .replace(/\b(osa|part|del|chapter|kappale|luku)[\s_-]*\d+\b/gi, '')
                 .replace(/[\s_-]*\d+[\s_-]*$/g, '')
                 .replace(/[\s_-]+$/, '')
                 .trim();

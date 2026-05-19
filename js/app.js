@@ -17,6 +17,15 @@ const SORT_OPTIONS = [
 ];
 const DEFAULT_LIBRARY_SORT = 'recent-desc';
 
+/**
+ * Library view modes. 'icons' shows a grid of cover thumbnails (Windows
+ * "Large icons"); 'details' shows a compact list with a small thumbnail
+ * per row (Windows "Details"). Persisted in Storage settings as
+ * `libraryView`.
+ */
+const LIBRARY_VIEWS = ['icons', 'details'];
+const DEFAULT_LIBRARY_VIEW = 'icons';
+
 const App = {
     currentScreen: 'login',
     currentFolder: null,
@@ -475,7 +484,12 @@ const App = {
     },
 
     /**
-     * Render library content
+     * Render library content.
+     *
+     * Two view modes share the same sectioning and data, but differ in
+     * the inner card markup: Icons mode renders book-card thumbnails in
+     * a grid; Details mode renders compact list rows with a small cover
+     * thumbnail. The view is persisted via Storage settings.
      */
     renderLibrary() {
         const content = document.getElementById('library-content');
@@ -500,15 +514,16 @@ const App = {
         }
 
         const sortValue = this._getLibrarySort();
+        const view = this._getLibraryView();
         const hasSortable = hasBooks || hasStandaloneEbooks || hasStandaloneAudio;
+        const gridClass = view === 'icons' ? 'book-grid' : 'file-list';
         let html = '';
 
-        // Sort dropdown — only when there's something sortable. The
-        // "Jatka lukemista" card and "Kansiot" section are intentionally
-        // not affected by this control.
-        if (hasSortable) {
-            html += this._renderSortDropdown(sortValue);
-        }
+        // Toolbar (sort + view toggle) — only when there's something sortable.
+        // The "Jatka lukemista" card and "Kansiot" section are not affected
+        // by sort or view, but the view toggle still applies to whichever
+        // sections render.
+        html += this._renderLibraryToolbar({ sortValue, view, showSort: hasSortable });
 
         // Show continue reading if available
         const lastRead = this.getLastReadBook();
@@ -516,58 +531,54 @@ const App = {
             html += this.renderContinueReading(lastRead);
         }
 
-        // Render books (multi-part or from subfolders)
+        // Books (multi-part or from subfolders)
         if (hasBooks) {
             const books = this._sortLibraryItems(this.library.books, sortValue);
-            html += '<div class="library-section"><h3>Kirjat</h3><div class="book-grid">';
+            html += `<div class="library-section"><h3>Kirjat</h3><div class="${gridClass}">`;
             books.forEach(book => {
-                html += this.renderBookCard(book);
+                html += view === 'icons' ? this.renderBookCard(book) : this.renderBookRow(book);
             });
             html += '</div></div>';
         }
 
-        // Render standalone ebooks
+        // Standalone ebooks
         if (hasStandaloneEbooks) {
             const ebooks = this._sortLibraryItems(this.library.standaloneFiles.ebooks, sortValue);
-            html += '<div class="library-section"><h3>Yksittäiset kirjat</h3><div class="file-list">';
+            html += `<div class="library-section"><h3>Yksittäiset kirjat</h3><div class="${gridClass}">`;
             ebooks.forEach(file => {
                 const progress = this._getItemProgress(file);
-                const type = Drive.isEPUB(file) ? 'epub' : 'pdf';
-                html += this.renderFileItem(file, type, progress);
+                const type = (Providers.active()?.isEPUB?.(file)) ? 'epub' : 'pdf';
+                html += view === 'icons'
+                    ? this.renderFileCard(file, type, progress)
+                    : this.renderFileItem(file, type, progress);
             });
             html += '</div></div>';
         }
 
-        // Render standalone audio
+        // Standalone audio
         if (hasStandaloneAudio) {
             const audio = this._sortLibraryItems(this.library.standaloneFiles.audio, sortValue);
-            html += '<div class="library-section"><h3>Yksittäiset äänitiedostot</h3><div class="file-list">';
+            html += `<div class="library-section"><h3>Yksittäiset äänitiedostot</h3><div class="${gridClass}">`;
             audio.forEach(file => {
                 const progress = this._getItemProgress(file);
-                html += this.renderFileItem(file, 'audio', progress);
+                html += view === 'icons'
+                    ? this.renderFileCard(file, 'audio', progress)
+                    : this.renderFileItem(file, 'audio', progress);
             });
             html += '</div></div>';
         }
 
-        // Render subfolders that are not books
+        // Subfolders that are not books
         if (hasFolders) {
             const nonBookFolders = this.files.folders.filter(f =>
                 !this.library.books.some(b => b.id === f.id)
             );
             if (nonBookFolders.length > 0) {
-                html += '<div class="library-section"><h3>Kansiot</h3><div class="file-list">';
+                html += `<div class="library-section"><h3>Kansiot</h3><div class="${gridClass}">`;
                 nonBookFolders.forEach(folder => {
-                    html += `
-                        <div class="file-item subfolder" data-id="${folder.id}" data-name="${folder.name}">
-                            <div class="file-icon folder">
-                                <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
-                            </div>
-                            <div class="file-details">
-                                <div class="file-name">${folder.name}</div>
-                                <div class="file-meta">Kansio</div>
-                            </div>
-                        </div>
-                    `;
+                    html += view === 'icons'
+                        ? this.renderFolderCard(folder)
+                        : this.renderFolderRow(folder);
                 });
                 html += '</div></div>';
             }
@@ -575,9 +586,8 @@ const App = {
 
         content.innerHTML = html;
 
-        // Wire up the sort dropdown (if rendered) before the library
-        // click handlers so a stray click on the <select> doesn't bubble
-        // into anything below it.
+        // Toolbar handlers — wire before library handlers so clicks on
+        // the controls don't bubble into anything below.
         const sortSelect = content.querySelector('#library-sort-select');
         if (sortSelect) {
             sortSelect.addEventListener('change', (e) => {
@@ -585,9 +595,13 @@ const App = {
                 this.renderLibrary();
             });
         }
+        content.querySelectorAll('.view-toggle-btn').forEach(btn => {
+            btn.addEventListener('click', () => this._setLibraryView(btn.dataset.view));
+        });
 
-        // Add click handlers
+        // Item click handlers + lazy cover loader.
         this.setupLibraryClickHandlers(content);
+        this._attachCoverLoader(content);
     },
 
     /**
@@ -600,21 +614,109 @@ const App = {
         return SORT_OPTIONS.some(o => o.value === saved) ? saved : DEFAULT_LIBRARY_SORT;
     },
 
-    /** Build the sort dropdown HTML with the saved option preselected. */
-    _renderSortDropdown(currentValue) {
-        const options = SORT_OPTIONS.map(opt => {
-            const selected = opt.value === currentValue ? ' selected' : '';
-            return `<option value="${opt.value}"${selected}>${opt.label}</option>`;
-        }).join('');
-        return `
-            <div class="library-sort-row" style="display: flex; align-items: center; gap: 8px; padding: 12px 16px;">
-                <label for="library-sort-select" style="font-size: 0.9rem; color: var(--text-secondary);">Järjestys:</label>
-                <select id="library-sort-select"
-                    style="flex: 1; max-width: 320px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.9rem;">
-                    ${options}
-                </select>
+    /**
+     * Build the library toolbar: sort dropdown on the left, view toggle
+     * (Icons / Details) on the right. When there's nothing sortable we
+     * still render the view toggle on its own so the user can switch
+     * modes from any non-empty library state.
+     */
+    _renderLibraryToolbar({ sortValue, view, showSort }) {
+        const sortPart = showSort ? (() => {
+            const options = SORT_OPTIONS.map(opt => {
+                const selected = opt.value === sortValue ? ' selected' : '';
+                return `<option value="${opt.value}"${selected}>${opt.label}</option>`;
+            }).join('');
+            return `
+                <label for="library-sort-select" class="library-toolbar-label">Järjestys:</label>
+                <select id="library-sort-select" class="library-sort-select">${options}</select>
+            `;
+        })() : '';
+
+        const toggle = `
+            <div class="view-toggle" role="group" aria-label="Näkymä">
+                <button type="button" class="view-toggle-btn ${view === 'icons' ? 'active' : ''}" data-view="icons" title="Kuvakkeet">
+                    <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z"/></svg>
+                </button>
+                <button type="button" class="view-toggle-btn ${view === 'details' ? 'active' : ''}" data-view="details" title="Lista">
+                    <svg viewBox="0 0 24 24"><path d="M3 5h18v2H3zm0 6h18v2H3zm0 6h18v2H3z"/></svg>
+                </button>
             </div>
         `;
+
+        return `<div class="library-toolbar">${sortPart}<div class="library-toolbar-spacer"></div>${toggle}</div>`;
+    },
+
+    /** Read persisted view mode, falling back to default for unknown values. */
+    _getLibraryView() {
+        const v = Storage.getSettings().libraryView;
+        return LIBRARY_VIEWS.includes(v) ? v : DEFAULT_LIBRARY_VIEW;
+    },
+
+    /** Set view mode and re-render. */
+    _setLibraryView(view) {
+        if (!LIBRARY_VIEWS.includes(view)) return;
+        if (this._getLibraryView() === view) return;
+        Storage.setSettings({ libraryView: view });
+        this.renderLibrary();
+    },
+
+    /**
+     * Resolve cover info for a library item.
+     *   - R2 books / files expose `cover` as a public URL → kind 'image'
+     *   - Drive EPUBs (standalone or first ebook of a multi-part book) →
+     *     kind 'lazy' (cover loader will extract via partial-ZIP fetch)
+     *   - Anything else → kind 'none' (caller shows SVG fallback)
+     */
+    _coverFor(item) {
+        if (!item) return { kind: 'none' };
+        if (typeof item.cover === 'string' && item.cover) {
+            return { kind: 'image', src: item.cover };
+        }
+
+        // For multi-part books, prefer the first EPUB child.
+        const isDriveEpub = (x) =>
+            x && x.sourceId === 'drive' &&
+            (x.mimeType === 'application/epub+zip' || /\.epub$/i.test(x.name || ''));
+
+        let epub = null;
+        if (isDriveEpub(item)) {
+            epub = item;
+        } else if (Array.isArray(item.ebooks)) {
+            epub = item.ebooks.find(isDriveEpub) || null;
+        }
+
+        if (epub && epub.key && epub.size) {
+            const stamp = epub.modifiedTime || '';
+            return {
+                kind: 'lazy',
+                key: `drive:${epub.key}@${stamp}`,
+                source: 'drive',
+                id: epub.key,
+                size: epub.size,
+            };
+        }
+        return { kind: 'none' };
+    },
+
+    /**
+     * Render the cover slot HTML — an <img> sized by the parent .book-cover
+     * box. For 'lazy' covers the <img> starts with no src; the cover loader
+     * fills it in once it intersects the viewport. CSS hides the SVG
+     * fallback once the img has loaded (via the .cover-loaded class).
+     */
+    _renderCoverSlot(cover) {
+        if (cover.kind === 'image') {
+            return `<img class="cover-img cover-loaded" src="${cover.src}" alt="" loading="lazy" decoding="async">`;
+        }
+        if (cover.kind === 'lazy') {
+            return `<img class="cover-img lazy-cover"
+                         data-cover-key="${cover.key}"
+                         data-cover-source="${cover.source}"
+                         data-cover-id="${cover.id}"
+                         data-cover-size="${cover.size}"
+                         alt="" decoding="async">`;
+        }
+        return '';
     },
 
     /**
@@ -822,29 +924,19 @@ const App = {
     },
 
     /**
-     * Render a book card
+     * Render a book card (Icons view).
      */
     renderBookCard(book) {
-        // Calculate overall progress
         const progress = this.calculateBookProgress(book);
-        const typeIcon = book.primaryType === 'audio'
-            ? '<svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>'
-            : '<svg viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1z"/></svg>';
-
-        const partsText = book.isMultiPart
-            ? `${book.ebookCount + book.audioCount} osaa`
-            : '';
-
-        // Prefer a real cover image (R2 books expose `cover` as a full URL
-        // built from the manifest entry); fall back to the format SVG.
-        const coverArt = book.cover
-            ? `<img src="${book.cover}" alt="" loading="lazy" decoding="async">`
-            : typeIcon;
+        const partsText = book.isMultiPart ? `${book.ebookCount + book.audioCount} osaa` : '';
+        const cover = this._coverFor(book);
+        const typeLabel = this._bookTypeLabel(book);
 
         return `
             <div class="book-card" data-book-id="${book.id}" data-book-type="${book.primaryType}">
                 <div class="book-cover">
-                    ${coverArt}
+                    ${this._coverFallbackSvg(book.primaryType === 'audio' ? 'audio' : 'ebook')}
+                    ${this._renderCoverSlot(cover)}
                     ${book.primaryType === 'both' ? '<span class="book-type-badge">Kirja + Audio</span>' : ''}
                     ${partsText ? `<span class="parts-indicator">${partsText}</span>` : ''}
                     <div class="book-progress">
@@ -853,12 +945,67 @@ const App = {
                 </div>
                 <div class="book-info">
                     <div class="book-title">${book.name}</div>
-                    <div class="book-meta">
-                        ${book.primaryType === 'ebook' ? 'E-kirja' : book.primaryType === 'audio' ? 'Äänikirja' : 'E-kirja & Ääni'}
-                    </div>
+                    <div class="book-meta">${typeLabel}</div>
                 </div>
             </div>
         `;
+    },
+
+    /**
+     * Render a book as a compact row (Details view). Carries the same
+     * data-book-id so the existing click handler picks it up.
+     */
+    renderBookRow(book) {
+        const progress = this.calculateBookProgress(book);
+        const partsText = book.isMultiPart ? `${book.ebookCount + book.audioCount} osaa · ` : '';
+        const cover = this._coverFor(book);
+        const typeLabel = this._bookTypeLabel(book);
+        const progressText = progress > 0 ? `${progress}% luettu` : '';
+        const meta = [partsText + typeLabel, progressText].filter(Boolean).join(' · ');
+
+        return `
+            <div class="book-card book-row" data-book-id="${book.id}" data-book-type="${book.primaryType}">
+                <div class="row-cover">
+                    ${this._coverFallbackSvg(book.primaryType === 'audio' ? 'audio' : 'ebook', 'small')}
+                    ${this._renderCoverSlot(cover)}
+                </div>
+                <div class="file-details">
+                    <div class="file-name">${book.name}</div>
+                    <div class="file-meta">${meta}</div>
+                </div>
+                ${progress > 0 ? `
+                    <div class="row-progress">
+                        <div class="row-progress-bar" style="width: ${progress}%"></div>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    },
+
+    /** Human-readable type label for a book. */
+    _bookTypeLabel(book) {
+        if (book.primaryType === 'ebook') return 'E-kirja';
+        if (book.primaryType === 'audio') return 'Äänikirja';
+        return 'E-kirja & Ääni';
+    },
+
+    /**
+     * SVG used as a fallback inside .book-cover / .row-cover when there's
+     * no real cover. Variant 'small' is used by row thumbnails.
+     */
+    _coverFallbackSvg(kind, size = 'large') {
+        const cls = `cover-fallback cover-fallback-${size} cover-fallback-${kind}`;
+        if (kind === 'audio') {
+            return `<svg class="${cls}" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>`;
+        }
+        if (kind === 'pdf') {
+            return `<svg class="${cls}" viewBox="0 0 24 24"><path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8.5 7.5c0 .83-.67 1.5-1.5 1.5H9v2H7.5V7H10c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V7H15c.83 0 1.5.67 1.5 1.5v3zm4-3H19v1h1.5V11H19v2h-1.5V7h3v1.5zM9 9.5h1v-1H9v1zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm10 5.5h1v-3h-1v3z"/></svg>`;
+        }
+        if (kind === 'folder') {
+            return `<svg class="${cls}" viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>`;
+        }
+        // ebook / default
+        return `<svg class="${cls}" viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1z"/></svg>`;
     },
 
     /**
@@ -888,32 +1035,32 @@ const App = {
     },
 
     /**
-     * Render a file item
+     * Render a file row (Details view). EPUBs get a small cover thumbnail
+     * when one is available (or extractable); PDFs and audio keep their
+     * colored icon block.
      */
     renderFileItem(file, type, progress) {
         const progressPercent = progress?.percentage || 0;
         const progressText = progress ? `${progressPercent}% luettu` : '';
 
-        const icons = {
-            pdf: '<svg viewBox="0 0 24 24"><path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8.5 7.5c0 .83-.67 1.5-1.5 1.5H9v2H7.5V7H10c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V7H15c.83 0 1.5.67 1.5 1.5v3zm4-3H19v1h1.5V11H19v2h-1.5V7h3v1.5zM9 9.5h1v-1H9v1zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm10 5.5h1v-3h-1v3z"/></svg>',
-            epub: '<svg viewBox="0 0 24 24"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/></svg>',
-            audio: '<svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>'
-        };
-
-        const icon = icons[type] || icons.pdf;
+        const cover = type === 'epub' ? this._coverFor(file) : { kind: 'none' };
+        const thumb = cover.kind !== 'none'
+            ? `<div class="row-cover">
+                   ${this._coverFallbackSvg('ebook', 'small')}
+                   ${this._renderCoverSlot(cover)}
+               </div>`
+            : `<div class="file-icon ${type}">${this._iconForType(type)}</div>`;
 
         return `
             <div class="file-item" data-id="${file.id}" data-name="${file.name}" data-type="${type}">
-                <div class="file-icon ${type}">
-                    ${icon}
-                </div>
+                ${thumb}
                 <div class="file-details">
                     <div class="file-name">${file.name}</div>
                     <div class="file-meta">${progressText}</div>
                 </div>
                 ${progressPercent > 0 ? `
-                    <div style="width: 60px; height: 4px; background: var(--border-color); border-radius: 2px;">
-                        <div style="width: ${progressPercent}%; height: 100%; background: var(--accent); border-radius: 2px;"></div>
+                    <div class="row-progress">
+                        <div class="row-progress-bar" style="width: ${progressPercent}%"></div>
                     </div>
                 ` : ''}
             </div>
@@ -921,7 +1068,78 @@ const App = {
     },
 
     /**
-     * Setup click handlers for library items
+     * Render a standalone file as a card (Icons view). EPUBs get the
+     * cover slot; audio + PDF use a coloured fallback that fills the
+     * book-cover box.
+     */
+    renderFileCard(file, type, progress) {
+        const progressPercent = progress?.percentage || 0;
+        const cover = type === 'epub' ? this._coverFor(file) : { kind: 'none' };
+        const typeLabel = type === 'audio' ? 'Äänitiedosto' : type === 'epub' ? 'EPUB' : 'PDF';
+        const fallbackKind = type === 'audio' ? 'audio' : type === 'pdf' ? 'pdf' : 'ebook';
+
+        return `
+            <div class="book-card file-card" data-id="${file.id}" data-name="${file.name}" data-type="${type}">
+                <div class="book-cover book-cover-${fallbackKind}">
+                    ${this._coverFallbackSvg(fallbackKind)}
+                    ${this._renderCoverSlot(cover)}
+                    <div class="book-progress">
+                        <div class="book-progress-bar" style="width: ${progressPercent}%"></div>
+                    </div>
+                </div>
+                <div class="book-info">
+                    <div class="book-title">${file.name}</div>
+                    <div class="book-meta">${typeLabel}${progressPercent > 0 ? ` · ${progressPercent}%` : ''}</div>
+                </div>
+            </div>
+        `;
+    },
+
+    /** Folder rendered as a card (Icons view). */
+    renderFolderCard(folder) {
+        return `
+            <div class="book-card subfolder folder-card" data-id="${folder.id}" data-name="${folder.name}">
+                <div class="book-cover book-cover-folder">
+                    ${this._coverFallbackSvg('folder')}
+                </div>
+                <div class="book-info">
+                    <div class="book-title">${folder.name}</div>
+                    <div class="book-meta">Kansio</div>
+                </div>
+            </div>
+        `;
+    },
+
+    /** Folder rendered as a list row (Details view). */
+    renderFolderRow(folder) {
+        return `
+            <div class="file-item subfolder" data-id="${folder.id}" data-name="${folder.name}">
+                <div class="file-icon folder">
+                    ${this._iconForType('folder')}
+                </div>
+                <div class="file-details">
+                    <div class="file-name">${folder.name}</div>
+                    <div class="file-meta">Kansio</div>
+                </div>
+            </div>
+        `;
+    },
+
+    /** Inline SVG for the small icon-box used by file-item rows. */
+    _iconForType(type) {
+        const icons = {
+            pdf: '<svg viewBox="0 0 24 24"><path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8.5 7.5c0 .83-.67 1.5-1.5 1.5H9v2H7.5V7H10c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V7H15c.83 0 1.5.67 1.5 1.5v3zm4-3H19v1h1.5V11H19v2h-1.5V7h3v1.5zM9 9.5h1v-1H9v1zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm10 5.5h1v-3h-1v3z"/></svg>',
+            epub: '<svg viewBox="0 0 24 24"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/></svg>',
+            audio: '<svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>',
+            folder: '<svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>',
+        };
+        return icons[type] || icons.pdf;
+    },
+
+    /**
+     * Wire click handlers for the rendered library. Cards (`.book-card`)
+     * and rows (`.file-item`) can each represent a book, a standalone
+     * file, or a subfolder — the data attributes disambiguate.
      */
     setupLibraryClickHandlers(content) {
         // Continue reading — search by item key OR book id (HLS books).
@@ -943,33 +1161,131 @@ const App = {
             });
         }
 
-        // Book cards
-        content.querySelectorAll('.book-card').forEach(card => {
-            card.addEventListener('click', () => {
-                const bookId = card.dataset.bookId;
-                const book = this.library.books.find(b => b.id === bookId);
-                if (book) {
-                    this.openBook(book);
-                }
-            });
-        });
-
-        // File items
-        content.querySelectorAll('.file-item:not(.subfolder)').forEach(item => {
-            item.addEventListener('click', () => {
-                this.openFile(item.dataset.id, item.dataset.name, item.dataset.type);
-            });
-        });
-
-        // Subfolders
-        content.querySelectorAll('.file-item.subfolder').forEach(item => {
-            item.addEventListener('click', () => {
-                this.currentFolder = { id: item.dataset.id, name: item.dataset.name };
+        const openFromCard = (card) => {
+            // Subfolder: navigate into it by replacing the current selection
+            // with just this folder. Folder navigation may still surface
+            // children for users whose grants pre-date the Dec 2025 Google
+            // regression; for new grants the user will need to re-pick from
+            // inside the subfolder via the Picker.
+            if (card.classList.contains('subfolder')) {
+                this.currentFolder = { id: card.dataset.id, name: card.dataset.name };
                 Storage.setSelectedFolder(this.currentFolder);
-                document.getElementById('folder-name').textContent = item.dataset.name;
+                document.getElementById('folder-name').textContent = card.dataset.name;
                 this.loadLibrary();
+                return;
+            }
+            // Book: identified by data-book-id.
+            const bookId = card.dataset.bookId;
+            if (bookId) {
+                const book = this.library.books.find(b => b.id === bookId);
+                if (book) this.openBook(book);
+                return;
+            }
+            // Standalone file: identified by data-id + data-type.
+            if (card.dataset.id && card.dataset.type) {
+                this.openFile(card.dataset.id, card.dataset.name, card.dataset.type);
+            }
+        };
+
+        // Both view modes (book-card grid + file-item list) route through
+        // the same dispatcher.
+        content.querySelectorAll('.book-card').forEach(c => c.addEventListener('click', () => openFromCard(c)));
+        content.querySelectorAll('.file-item').forEach(c => c.addEventListener('click', () => openFromCard(c)));
+    },
+
+    // ---------------------------------------------------------------
+    // Lazy cover loader: IntersectionObserver-driven, concurrency-capped.
+    // For Drive EPUBs, extracts the cover via partial ZIP read (see
+    // EpubCover) and caches the Blob in IndexedDB (see CoverCache) keyed
+    // by fileId + modifiedTime so re-renders are instant. "No cover"
+    // results are cached too so a book without a cover doesn't get
+    // re-fetched on every library render.
+    // ---------------------------------------------------------------
+
+    _coverLoader: {
+        observer: null,
+        queue: [],
+        inflight: 0,
+        MAX_CONCURRENT: 4,
+        objectUrls: [],
+    },
+
+    _attachCoverLoader(content) {
+        // Tear down previous observer + revoke any object URLs created
+        // for the prior render (the <img>s holding them are gone now).
+        const loader = this._coverLoader;
+        if (loader.observer) loader.observer.disconnect();
+        loader.queue = [];
+        loader.inflight = 0;
+        for (const url of loader.objectUrls) URL.revokeObjectURL(url);
+        loader.objectUrls = [];
+
+        const targets = content.querySelectorAll('img.lazy-cover');
+        if (!targets.length) return;
+
+        loader.observer = new IntersectionObserver((entries) => {
+            for (const entry of entries) {
+                if (!entry.isIntersecting) continue;
+                loader.observer.unobserve(entry.target);
+                this._enqueueCoverJob(entry.target);
+            }
+        }, { rootMargin: '200px' });
+
+        targets.forEach(t => loader.observer.observe(t));
+    },
+
+    _enqueueCoverJob(img) {
+        this._coverLoader.queue.push(img);
+        this._pumpCoverQueue();
+    },
+
+    _pumpCoverQueue() {
+        const loader = this._coverLoader;
+        while (loader.inflight < loader.MAX_CONCURRENT && loader.queue.length > 0) {
+            const img = loader.queue.shift();
+            loader.inflight++;
+            this._loadCover(img).catch(() => {}).finally(() => {
+                loader.inflight--;
+                this._pumpCoverQueue();
             });
-        });
+        }
+    },
+
+    async _loadCover(img) {
+        if (!img.isConnected) return;
+        const { coverKey: key, coverSource: source, coverId: id, coverSize: size } = img.dataset;
+        if (!key) return;
+
+        // 1) Cache lookup. A 'missing' hit means we already tried and
+        //    there's no cover — leave the SVG fallback alone.
+        const cached = await CoverCache.get(key);
+        if (cached) {
+            if (cached.blob) this._setCoverImage(img, cached.blob);
+            return;
+        }
+
+        // 2) Extract from EPUB on Drive. Other sources don't reach here
+        //    today; if a future source is added that supports lazy
+        //    covers it can branch on `source` here.
+        if (source !== 'drive') {
+            await CoverCache.putMissing(key);
+            return;
+        }
+        const blob = await EpubCover.fetchFromDrive(id, Number(size));
+        if (blob) {
+            await CoverCache.put(key, blob);
+            if (img.isConnected) this._setCoverImage(img, blob);
+        } else {
+            await CoverCache.putMissing(key);
+        }
+    },
+
+    _setCoverImage(img, blob) {
+        if (!img.isConnected) return;
+        const url = URL.createObjectURL(blob);
+        this._coverLoader.objectUrls.push(url);
+        img.src = url;
+        img.classList.add('cover-loaded');
     },
 
     /**
