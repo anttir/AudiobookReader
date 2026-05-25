@@ -142,13 +142,43 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
         return token ? { 'Authorization': `Bearer ${token}` } : {};
     },
 
+    /**
+     * fetch() wrapper that retries once after a silent token refresh
+     * if the auth-worker returns 401/403. Without this, the user's
+     * library / cover downloads start failing the moment their Google
+     * token expires (every ~hour) even though Auth.refreshToken() can
+     * usually mint a new one transparently.
+     *
+     * Only runs the retry path when we'd send a token in the first
+     * place — public pub-*.r2.dev URLs don't authenticate and a 403
+     * there means something else.
+     */
+    async _fetchWithAuthRetry(url, init = {}) {
+        const buildInit = () => ({
+            ...init,
+            headers: { ...(init.headers || {}), ...this._authHeaders() },
+        });
+        const resp = await fetch(url, buildInit());
+        if (resp.ok) return resp;
+        if (resp.status !== 401 && resp.status !== 403) return resp;
+        if (this._isPublicR2()) return resp;
+        if (typeof Auth === 'undefined' || !Auth.refreshToken) return resp;
+
+        try {
+            await Auth.refreshToken();
+        } catch (_e) {
+            return resp;
+        }
+        return fetch(url, buildInit());
+    },
+
     // --- manifest ----------------------------------------------------------
 
     async _fetchManifest() {
         const url = this._absUrl(this.R2_INDEX_PATH);
         // cache: 'no-cache' so book additions surface without forcing the user
         // to hard-refresh; the file is small.
-        const resp = await fetch(url, { cache: 'no-cache', headers: this._authHeaders() });
+        const resp = await this._fetchWithAuthRetry(url, { cache: 'no-cache' });
         if (!resp.ok) {
             throw new Error(`R2 manifest fetch failed (${resp.status}). URL: ${url}`);
         }
@@ -273,7 +303,7 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
 
     async downloadAsBlob(item, onProgress) {
         const url = this._absUrl(item.key);
-        const resp = await fetch(url, { headers: this._authHeaders() });
+        const resp = await this._fetchWithAuthRetry(url);
         if (!resp.ok) throw new Error(`R2 fetch failed: ${resp.status}`);
 
         const contentLength = resp.headers.get('content-length');
