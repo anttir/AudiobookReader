@@ -50,6 +50,46 @@ const Auth = {
 
         // Initialize token client
         this.initTokenClient();
+
+        // Refresh on wake. Background tabs throttle setTimeout (Chrome
+        // drops to ~1 Hz after 5 min; iOS Safari pauses entirely), so a
+        // refresh scheduled for the 59th minute may never fire while the
+        // user is listening with the screen off. We re-check on every
+        // foreground transition.
+        this._installWakeRefreshListener();
+    },
+
+    /**
+     * Trigger a token-state check whenever the page transitions to
+     * foreground. If the scheduled refresh point has passed (or the
+     * token is already expired), run a silent refresh now. Otherwise
+     * re-arm the timer in case the previous one was throttled away.
+     *
+     * Idempotent — safe to call more than once.
+     */
+    _installWakeRefreshListener() {
+        if (this._wakeListenerInstalled) return;
+        this._wakeListenerInstalled = true;
+
+        const wake = () => {
+            if (!this.accessToken || !this._expiresAt) return;
+            const refreshAt = this._expiresAt - this.REFRESH_LEAD_MS;
+            if (Date.now() >= refreshAt) {
+                console.info('[auth] wake: token at/past refresh point; refreshing now');
+                this.refreshToken().catch(err => {
+                    console.warn('[auth] wake refresh failed:', err?.message || err);
+                });
+            } else {
+                this._scheduleAutoRefresh();
+            }
+        };
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') wake();
+        });
+        window.addEventListener('focus', wake);
+        // iOS Safari restores from BFCache without firing visibilitychange
+        window.addEventListener('pageshow', wake);
     },
 
     /**
@@ -182,6 +222,12 @@ const Auth = {
     /**
      * Schedule a silent token refresh ~60s before the current token
      * expires. Idempotent — clears any previously-scheduled timer.
+     *
+     * A timer failure here is non-fatal: we log and rely on the
+     * visibility-wake listener and the reactive 401 retries in the
+     * R2 provider / HLS player to catch real failures. Aggressively
+     * signing the user out from a background timer would yank them
+     * out of a listening session mid-chapter.
      */
     _scheduleAutoRefresh() {
         if (this._refreshTimer) {
@@ -190,13 +236,15 @@ const Auth = {
         }
         if (!this._expiresAt) return;
         const delay = this._expiresAt - Date.now() - this.REFRESH_LEAD_MS;
+        const onFail = err => {
+            console.warn('[auth] scheduled refresh failed (will retry on next request/wake):', err?.message || err);
+        };
         if (delay <= 0) {
-            // Already past the refresh point — try immediately
-            this.refreshToken().catch(() => { /* error_callback handles */ });
+            this.refreshToken().catch(onFail);
             return;
         }
         this._refreshTimer = setTimeout(() => {
-            this.refreshToken().catch(() => { /* error_callback handles */ });
+            this.refreshToken().catch(onFail);
         }, delay);
     },
 
@@ -216,10 +264,16 @@ const Auth = {
         }
 
         this._refreshPromise = new Promise((resolve, reject) => {
-            // Swap in temporary callbacks that resolve THIS promise. The
-            // tokenClient's persistent handlers (set in initTokenClient)
-            // run too, so storage/UI updates still happen normally — we
-            // just also resolve this promise so callers can `await`.
+            // Swap in temporary callbacks. On SUCCESS we still invoke
+            // the persistent handleTokenResponse callback so Storage and
+            // the auto-refresh timer get updated. On FAILURE we
+            // deliberately DO NOT invoke the persistent handleError —
+            // silent refresh failures are routine (Safari ITP blocks
+            // the GIS hidden iframe, the user has 3rd-party cookies
+            // off, transient network blips) and the persistent
+            // handleError aggressively wipes Storage and bounces the
+            // user to the login screen. Let the caller decide via the
+            // rejected promise.
             const origCb = this.tokenClient.callback;
             const origErr = this.tokenClient.error_callback;
             const restore = () => {
@@ -233,7 +287,7 @@ const Auth = {
                 else resolve(resp.access_token);
             };
             this.tokenClient.error_callback = (err) => {
-                try { origErr?.(err); } finally { restore(); }
+                restore();
                 reject(err instanceof Error ? err : new Error(String(err?.type || 'auth_error')));
             };
             // prompt: '' = silent if Google session exists; no popup
@@ -276,10 +330,11 @@ const Auth = {
     },
 
     /**
-     * Verify stored token is still valid. If it's expired or rejected,
-     * try a silent refresh before falling back to sign-out — that way
-     * a returning user with a recent-but-expired token doesn't get
-     * bounced back to the sign-in screen.
+     * Verify stored token is still valid. If it's expired or actually
+     * rejected (HTTP 401), try a silent refresh before falling back to
+     * a soft sign-out. Transient network errors (offline, DNS blip) do
+     * NOT bounce the user — we trust the stored token's known expiry
+     * and let the next real request prove it works.
      */
     async verifyToken() {
         // If we already know it's expired, skip the wasted round-trip
@@ -288,17 +343,27 @@ const Auth = {
             await this._refreshOrSignOut();
             return;
         }
+        let response;
         try {
-            const response = await fetch(CONFIG.API.USER_INFO, {
+            response = await fetch(CONFIG.API.USER_INFO, {
                 headers: { 'Authorization': `Bearer ${this.accessToken}` }
             });
-            if (!response.ok) throw new Error('Token invalid');
-            // Valid — wire up refresh timer + notify app
+        } catch (_networkError) {
+            // Offline / transient network failure on app start. Don't
+            // wipe the session — the user may simply have no network
+            // for a moment. Subsequent real requests will reveal if
+            // the token is genuinely bad and trigger reactive refresh.
+            console.info('[auth] userinfo fetch failed (network); keeping stored token');
             this._scheduleAutoRefresh();
             if (this.onAuthChange) this.onAuthChange(true, this.user);
-        } catch (_error) {
-            await this._refreshOrSignOut();
+            return;
         }
+        if (!response.ok) {
+            await this._refreshOrSignOut();
+            return;
+        }
+        this._scheduleAutoRefresh();
+        if (this.onAuthChange) this.onAuthChange(true, this.user);
     },
 
     async _refreshOrSignOut() {
@@ -309,16 +374,41 @@ const Auth = {
             await new Promise(r => setTimeout(r, 150));
         }
         if (!this.tokenClient) {
-            this.signOut();
+            this.softSignOut();
             return;
         }
         try {
             await this.refreshToken();
             // handleTokenResponse already fired onAuthChange
         } catch (_e) {
-            console.warn('Silent token refresh failed; signing out');
-            this.signOut();
+            console.warn('Silent token refresh failed; reverting to login (stored profile preserved)');
+            this.softSignOut();
         }
+    },
+
+    /**
+     * "Soft" sign-out used when a silent refresh fails. Drops the
+     * in-memory access token + persisted token+expiry, but leaves the
+     * user profile, settings, R2 config, and progress in localStorage.
+     * The app routes back to the login screen, but a returning user
+     * keeps everything they've configured — they just need to click
+     * Sign In to get a fresh token via the popup flow (which works
+     * even when 3rd-party cookies are blocked).
+     *
+     * Contrast with signOut(): that revokes the Google grant and wipes
+     * user identity, which is appropriate only when the user
+     * explicitly hits "Sign out".
+     */
+    softSignOut() {
+        this.accessToken = null;
+        this._expiresAt = 0;
+        if (this._refreshTimer) {
+            clearTimeout(this._refreshTimer);
+            this._refreshTimer = null;
+        }
+        Storage.remove(CONFIG.STORAGE_KEYS.accessToken);
+        Storage.remove(this.EXPIRES_AT_STORAGE_KEY);
+        if (this.onAuthChange) this.onAuthChange(false, null);
     },
 
     /**

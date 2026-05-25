@@ -318,6 +318,7 @@ const AudioPlayer = {
     async _handleAuthError() {
         if (this._authRefreshAttempted || !this.currentItem) {
             App.showToast('R2: kirjautuminen vanhentui, kirjaudu uudelleen', 'error');
+            if (typeof Auth !== 'undefined' && Auth.softSignOut) Auth.softSignOut();
             return;
         }
         this._authRefreshAttempted = true;
@@ -333,8 +334,13 @@ const AudioPlayer = {
             const item = this.currentItem;
             await this.loadTrack(item);
         } catch (err) {
+            // Silent refresh failed (Safari ITP, user revoked, offline).
+            // Drop to the login screen so the user can re-sign-in via
+            // the popup flow — we'd otherwise sit on a player that
+            // can't load any segments.
             console.warn('Silent token refresh failed:', err);
             App.showToast('R2: kirjautuminen vanhentui, kirjaudu uudelleen', 'error');
+            if (typeof Auth !== 'undefined' && Auth.softSignOut) Auth.softSignOut();
         }
     },
 
