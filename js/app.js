@@ -1148,15 +1148,21 @@ const App = {
             continueCard.addEventListener('click', () => {
                 const key = continueCard.dataset.bookId;
                 const type = continueCard.dataset.type;
-                const allFiles = [...(this.files?.ebooks || []), ...(this.files?.audio || [])];
-                let item = allFiles.find(f => f.key === key || f.id === key);
-                if (!item) {
-                    const book = (this.library?.books || []).find(b => b.id === key);
-                    if (book) {
-                        this.openBook(book);
-                        return;
-                    }
+                // Prefer book lookup first: when the item belongs to a book
+                // (R2 HLS, multi-part Drive), going through openBook sets
+                // currentBook so the player picks up cover/chapters/name.
+                const books = this.library?.books || [];
+                const parentBook = books.find(b =>
+                    b.id === key
+                    || (b.audioFiles || []).some(f => f.key === key || f.id === key)
+                    || (b.ebooks || []).some(f => f.key === key || f.id === key)
+                );
+                if (parentBook) {
+                    this.openBook(parentBook);
+                    return;
                 }
+                const allFiles = [...(this.files?.ebooks || []), ...(this.files?.audio || [])];
+                const item = allFiles.find(f => f.key === key || f.id === key);
                 if (item) this.openItem(item, type);
             });
         }
