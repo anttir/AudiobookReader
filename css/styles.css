@@ -671,21 +671,22 @@ body {
 
 .progress-bar::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     background: var(--accent);
+    border: 2px solid var(--text-primary);
     cursor: pointer;
     box-shadow: var(--shadow);
 }
 
 .progress-bar::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     background: var(--accent);
+    border: 2px solid var(--text-primary);
     cursor: pointer;
-    border: none;
 }
 
 .audio-controls {
@@ -1335,7 +1336,7 @@ body {
     margin: 12px 0;
 }
 
-.progress-bar {
+.progress-bar-container > .progress-bar {
     height: 100%;
     width: 0%;
     background: linear-gradient(90deg, var(--accent), #6bb5ff);
