@@ -326,7 +326,7 @@ const AudioPlayer = {
             if (typeof Auth === 'undefined' || !Auth.refreshToken) {
                 throw new Error('Auth.refreshToken unavailable');
             }
-            console.info('HLS auth error — attempting silent token refresh');
+            console.info('R2 auth error — attempting silent token refresh');
             await Auth.refreshToken();
             // Re-arm hls.js with the new token. Easiest is to fully
             // reload the source; preserves currentTime via the same
@@ -527,6 +527,11 @@ const AudioPlayer = {
      * Called when audio can start playing
      */
     onCanPlay() {
+        // A successful (re)load proves the current token works — re-arm the
+        // one-shot auth-retry guard so a later expiry can recover too. (HLS
+        // does the equivalent on FRAG_LOADED.)
+        this._authRefreshAttempted = false;
+
         if (this.isLoading) return;
 
         // Auto-play when loaded
@@ -871,10 +876,32 @@ const AudioPlayer = {
      */
     onError(e) {
         console.error('Audio error:', e);
+        const code = this.audio.error?.code;
         if (this.audio.error) {
-            console.error('Audio error code:', this.audio.error.code);
+            console.error('Audio error code:', code);
             console.error('Audio error message:', this.audio.error.message);
         }
+
+        // R2 native (non-HLS) audio carries the Google token in the URL
+        // (?_token=). When it expires mid-playback the next byte-range
+        // request 401s and the element throws a network/src error. Mirror
+        // the HLS auth-recovery path: refresh the token and reload from the
+        // saved position before bothering the user. HLS has its own handler
+        // (the hls.js ERROR event), so we only cover the direct path here.
+        const item = this.currentItem;
+        const isTokenedR2 = item?.sourceId === 'r2'
+            && !item.isPlaylist
+            && !this.hls
+            && typeof Auth !== 'undefined'
+            && !this._authRefreshAttempted;
+        const looksLikeAuthExpiry = code === (window.MediaError?.MEDIA_ERR_NETWORK ?? 2)
+            || code === (window.MediaError?.MEDIA_ERR_SRC_NOT_SUPPORTED ?? 4);
+        if (isTokenedR2 && looksLikeAuthExpiry) {
+            console.info('R2 native audio error — attempting silent token refresh + reload');
+            this._handleAuthError();
+            return;
+        }
+
         this.isLoading = false;
         App.showToast('Virhe äänitiedoston toistossa', 'error');
     },

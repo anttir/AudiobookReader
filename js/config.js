@@ -14,32 +14,45 @@ const CONFIG = {
     // Get this from: https://console.cloud.google.com/apis/credentials
     GOOGLE_API_KEY: 'AIzaSyDSim0N9T9HFinPha7KoQcUgkY9muTECTE',
 
-    // Google Drive API scopes.
-    // - drive.readonly: read-only access to all of the user's Drive
-    //   files. We need this (instead of the non-sensitive drive.file
-    //   scope) because Google Picker with drive.file cannot list the
-    //   children of a picked folder — by design, drive.file only
-    //   grants per-item access to files the user explicitly picks,
-    //   so folder navigation produces an empty listing. This app is
-    //   folder-based (the user picks a folder containing audiobooks
-    //   / ebooks and we enumerate the contents), so drive.readonly
-    //   is required for the core flow to work.
+    // OAuth scopes are split into two tiers so the common case (R2-only
+    // listening) gets a clean, one-tap sign-in, and the heavy Drive
+    // permissions are only requested when the user actually opens Google
+    // Drive (incremental authorization).
     //
-    //   This is a sensitive scope, so the OAuth client must stay in
-    //   Testing mode in Google Cloud Console (or go through Google's
-    //   verification process if you want to publish it). Personal use
-    //   with the developer's account + a handful of test users is
-    //   fine in Testing mode.
-    // - drive.appdata: private per-app folder used by Sync to store
-    //   listening progress across devices (invisible to the user via
-    //   the Drive UI, only this app sees it)
-    // - userinfo.*: profile + email for the sign-in UI
-    SCOPES: [
-        'https://www.googleapis.com/auth/drive.readonly',
-        'https://www.googleapis.com/auth/drive.appdata',
+    // BASE_SCOPES — requested at sign-in. Both are Google "non-sensitive"
+    // scopes, so the consent screen is just an account chooser: no
+    // "Google hasn't verified this app" warning, no test-user gating.
+    // This is all that's needed for:
+    //   - the sign-in UI (name / picture / email), and
+    //   - Cloudflare R2 playback: the r2-auth-worker only needs a valid
+    //     token whose email is on its allowlist — it does not check for
+    //     any Drive scope.
+    BASE_SCOPES: [
         'https://www.googleapis.com/auth/userinfo.profile',
         'https://www.googleapis.com/auth/userinfo.email'
     ].join(' '),
+
+    // DRIVE_SCOPES — requested incrementally, the first time the user
+    // opens the Google Drive source (folder picker / library / sync).
+    // Both are Google "sensitive/restricted" scopes: requesting them
+    // triggers the unverified-app warning and requires the OAuth client
+    // to be in Testing mode with the user added as a test user. Deferring
+    // them means users who only ever listen to R2 never see that flow.
+    //
+    // - drive.readonly: read-only access to the user's Drive files. We
+    //   need this (instead of the non-sensitive drive.file scope) because
+    //   Google Picker with drive.file cannot list the children of a
+    //   picked folder, and this app is folder-based.
+    // - drive.appdata: private per-app folder used by Sync to store
+    //   listening progress across devices.
+    DRIVE_SCOPES: [
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/drive.appdata'
+    ].join(' '),
+
+    // Back-compat alias. Older code paths referenced CONFIG.SCOPES as the
+    // single scope string requested at sign-in; that role is now BASE_SCOPES.
+    get SCOPES() { return this.BASE_SCOPES; },
 
     // Supported file types
     SUPPORTED_TYPES: {

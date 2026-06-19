@@ -40,19 +40,37 @@ const DriveProvider = Object.assign(Object.create(ProviderBase), {
             throw new Error('Not authenticated');
         }
 
-        const response = await fetch(url, {
+        const doFetch = (tok) => fetch(url, {
             ...options,
             headers: {
-                'Authorization': `Bearer ${token}`,
+                'Authorization': `Bearer ${tok}`,
                 ...options.headers
             }
         });
 
-        if (!response.ok) {
+        let response = await doFetch(token);
+
+        // 401 = expired token. Try one silent refresh + retry before giving
+        // up, so a token that aged out mid-session doesn't bounce the user
+        // to the login screen. Only a genuine refresh failure (revoked
+        // consent, Safari ITP blocking the silent flow) falls through to a
+        // *soft* sign-out — that keeps the user's profile + settings and
+        // only asks them to click "Kirjaudu" again, instead of revoking the
+        // grant and forcing the full Drive re-consent.
+        if (response.status === 401) {
+            try {
+                if (typeof Auth !== 'undefined' && Auth.refreshToken) {
+                    const fresh = await Auth.refreshToken();
+                    response = await doFetch(fresh || Auth.getAccessToken());
+                }
+            } catch (_e) { /* fall through to the check below */ }
             if (response.status === 401) {
-                Auth.signOut();
+                if (typeof Auth !== 'undefined' && Auth.softSignOut) Auth.softSignOut();
                 throw new Error('Session expired');
             }
+        }
+
+        if (!response.ok) {
             throw new Error(`API error: ${response.status}`);
         }
 
