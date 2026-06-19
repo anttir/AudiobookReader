@@ -307,12 +307,30 @@ Sovellus on käytettävissä: `https://USERNAME.github.io/audiobook-reader/`
 - **Web Audio API** - Äänentoisto
 - **LocalStorage** - Edistymisen tallennus
 
-## Tietoturva
+## Tietoturva ja kirjautuminen
 
-- Sovellus käyttää vain `drive.readonly` -oikeutta (ei voi muokata tiedostojasi)
-- Access token tallennetaan vain selaimen localStorageen
-- Kaikki data pysyy omassa Google Drivessasi
-- Mitään ei lähetetä ulkoisille palvelimille
+Kirjautuminen on kaksiportainen (**incremental authorization**), jotta
+suurin osa käyttäjistä ei joudu Googlen "sovellusta ei ole vahvistettu"
+-varoituksen läpi:
+
+- **Sisäänkirjautuminen** pyytää vain ei-arkaluonteiset `userinfo.profile`-
+  ja `userinfo.email` -oikeudet. Tämä riittää sekä kirjautumiseen että
+  Cloudflare R2 -kuunteluun (auth-worker tarkistaa vain että token on
+  voimassa ja sähköposti on allowlistilla). Consent on pelkkä tilin valinta.
+- **Google Drive -oikeudet** (`drive.readonly` + `drive.appdata`) pyydetään
+  vasta kun käyttäjä avaa Drive-lähteen ensimmäisen kerran. Nämä ovat
+  Googlen arkaluonteisia scopeja, joten vasta tässä vaiheessa näkyy
+  vahvistamattoman sovelluksen varoitus / test-user -vaatimus. R2:ta vain
+  käyttävät eivät kohtaa tätä koskaan.
+- `drive.readonly` on read-only — sovellus ei voi muokata tiedostojasi.
+- Access token tallennetaan vain selaimen localStorageen.
+- Drive-data pysyy omassa Google Drivessasi; mitään ei lähetetä omille
+  palvelimille (R2-sisältö kulkee oman auth-workerin kautta).
+
+> **Huom (cross-device sync):** laitteiden välinen edistymisen synkronointi
+> käyttää `drive.appdata`-kansiota, joten se on käytössä vasta kun Drive-lupa
+> on myönnetty. Pelkät R2-käyttäjät saavat edistymisen tallennettua
+> paikallisesti (localStorage), mutta eivät laitteiden välillä.
 
 ## Lisenssi
 

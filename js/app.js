@@ -329,8 +329,11 @@ const App = {
 
             // Best-effort: pull cross-device listening progress from
             // Drive's appData folder. Re-renders the "Continue listening"
-            // card if a newer position came from another device.
-            if (typeof Sync !== 'undefined') {
+            // card if a newer position came from another device. Sync needs
+            // the drive.appdata scope, so it only runs once the user has
+            // granted Drive access — R2-only users never get this far and
+            // don't pay the consent cost.
+            if (typeof Sync !== 'undefined' && Auth.hasDriveAccess?.()) {
                 Sync.init().then(() => {
                     // Refresh library so "Jatka lukemista" picks up any
                     // merged-in progress from other devices.
@@ -362,12 +365,38 @@ const App = {
     },
 
     /**
+     * Request the incremental Drive consent (sensitive scopes) and, on
+     * success, kick off cross-device sync + reload the library. Invoked
+     * from the "Yhdistä Google Drive" CTA — a user gesture, so the consent
+     * popup isn't blocked.
+     */
+    async connectDrive() {
+        try {
+            await Auth.ensureDriveAccess();
+        } catch (e) {
+            // User cancelled or denied — stay on R2-friendly state.
+            this.showToast('Google Drive -lupa peruttiin', 'info');
+            return;
+        }
+        if (typeof Sync !== 'undefined') {
+            Sync.init().then(() => this.renderLibrary?.());
+        }
+        await this.loadLibrary();
+    },
+
+    /**
      * Open Google Picker so the user grants the app access to a folder.
      * Required by the drive.file OAuth scope — we can't list root or
      * arbitrary folders, only ones the user has picked here.
      */
     async openFolderPicker() {
         try {
+            // Picking a folder needs the Drive scopes. If the user reached
+            // the picker button without having granted them yet, request
+            // consent first (this call is inside a click handler).
+            if (typeof Auth !== 'undefined' && !Auth.hasDriveAccess?.()) {
+                await Auth.ensureDriveAccess();
+            }
             const folder = await Drive.pickFolder();
             if (!folder) return;
             this.currentFolder = folder;
@@ -390,6 +419,24 @@ const App = {
         const provider = Providers.active();
         if (!provider) {
             content.innerHTML = `<div class="empty-state"><p>Ei tallennuslähdettä valittuna</p></div>`;
+            return;
+        }
+
+        // Google Drive needs the sensitive Drive scopes, which we only
+        // request when the user actually opens this source (incremental
+        // authorization). Until granted, show a connect CTA instead of
+        // firing Drive API calls that would 403.
+        if (provider.id === 'drive' && typeof Auth !== 'undefined' && !Auth.hasDriveAccess?.()) {
+            content.innerHTML = `
+                <div class="empty-state" style="padding: 40px;">
+                    <p>Google Drive vaatii lisäluvan tiedostojesi lukemiseen.</p>
+                    <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 8px;">
+                        Tämä lupa kysytään vain jos käytät Driveä. Pelkkä kuuntelu
+                        (Cloudflare R2) ei tarvitse sitä.
+                    </p>
+                    <button id="grant-drive-btn" class="primary-btn" style="margin-top: 16px;">Yhdistä Google Drive</button>
+                </div>`;
+            document.getElementById('grant-drive-btn')?.addEventListener('click', () => this.connectDrive());
             return;
         }
 

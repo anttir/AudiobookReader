@@ -48,7 +48,15 @@ const Providers = {
         if (saved && this.get(saved)) {
             this._activeId = saved;
         } else if (this._all.length > 0) {
-            this._activeId = this._all[0].id;
+            // No saved choice (new user): default to a source that's ready
+            // to use without extra OAuth consent — one that needs no auth
+            // (R2) and is configured. Keeps the common listen-only flow off
+            // the Google Drive permission prompt. Fall back to the first
+            // registered provider otherwise.
+            const frictionless = this._all.find(p =>
+                typeof p.needsAuth === 'function' && !p.needsAuth()
+                && typeof p.isConfigured === 'function' && p.isConfigured());
+            this._activeId = (frictionless || this._all[0]).id;
         }
         return this.active();
     },

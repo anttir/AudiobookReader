@@ -20,6 +20,16 @@ const Auth = {
     EXPIRES_AT_STORAGE_KEY: 'audiobook_access_token_exp',
     GRANTED_SCOPES_STORAGE_KEY: 'audiobook_granted_scopes',
     REFRESH_LEAD_MS: 60_000,
+    // The scope string the token client is currently configured with.
+    // Starts as BASE_SCOPES (non-sensitive: clean one-tap sign-in, enough
+    // for R2) and is upgraded to BASE + DRIVE the first time the user opens
+    // Google Drive (see ensureDriveAccess). Persisted indirectly via the
+    // granted-scopes list so a returning Drive user keeps Drive access on
+    // silent refresh.
+    _currentScopes: null,
+    // In-flight Drive consent so concurrent callers (e.g. picker + library
+    // load) share one popup instead of stacking two.
+    _driveConsentPromise: null,
 
     /**
      * Initialize Google Identity Services
@@ -33,7 +43,16 @@ const Auth = {
         const storedExp = Storage.get(this.EXPIRES_AT_STORAGE_KEY) || 0;
         const storedScopes = Storage.get(this.GRANTED_SCOPES_STORAGE_KEY);
 
-        // Detect scope drift: CONFIG.SCOPES has changed since the stored
+        // Decide which scope tier to run with this session. If the stored
+        // grant already includes the Drive scopes (returning Drive user, or
+        // someone who signed in before the scope split), keep requesting the
+        // full set so silent refreshes don't silently drop Drive access.
+        // Otherwise stay on the lightweight base tier.
+        this._currentScopes = this._scopesInclude(storedScopes, CONFIG.DRIVE_SCOPES)
+            ? `${CONFIG.BASE_SCOPES} ${CONFIG.DRIVE_SCOPES}`.trim()
+            : CONFIG.BASE_SCOPES;
+
+        // Detect scope drift: the scopes we now require have changed since the stored
         // token was granted (e.g. drive.file → drive.readonly migration).
         // Force re-consent so the new token has the required scopes
         // BEFORE the app makes its first Drive request.
@@ -93,13 +112,30 @@ const Auth = {
     },
 
     /**
-     * True if the stored granted-scopes list is missing any scope that
-     * CONFIG.SCOPES now requires. A null storedScopes value means we
-     * never recorded the grant (token predates this code) — treat as
-     * mismatch so we get a fresh, audited grant.
+     * True if `storedScopes` already contains every scope in the
+     * space-separated `scopeStr`. Used to decide whether Drive access is
+     * already granted and which scope tier to refresh with.
+     */
+    _scopesInclude(storedScopes, scopeStr) {
+        if (!Array.isArray(storedScopes)) return false;
+        const required = (scopeStr || '').split(' ').filter(Boolean);
+        return required.every(s => storedScopes.includes(s));
+    },
+
+    /** True once the user has granted the Drive scopes (this device). */
+    hasDriveAccess() {
+        const stored = Storage.get(this.GRANTED_SCOPES_STORAGE_KEY);
+        return this._scopesInclude(stored, CONFIG.DRIVE_SCOPES);
+    },
+
+    /**
+     * True if the stored granted-scopes list is missing any scope that the
+     * current tier (_currentScopes) requires. A null storedScopes value
+     * means we never recorded the grant (token predates this code) — treat
+     * as mismatch so we get a fresh, audited grant.
      */
     _hasScopeDrift(storedScopes) {
-        const required = (CONFIG.SCOPES || '').split(' ').filter(Boolean);
+        const required = (this._currentScopes || CONFIG.BASE_SCOPES).split(' ').filter(Boolean);
         if (!Array.isArray(storedScopes)) return true;
         return required.some(s => !storedScopes.includes(s));
     },
@@ -114,9 +150,11 @@ const Auth = {
             return;
         }
 
+        if (!this._currentScopes) this._currentScopes = CONFIG.BASE_SCOPES;
+
         this.tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: CONFIG.GOOGLE_CLIENT_ID,
-            scope: CONFIG.SCOPES,
+            scope: this._currentScopes,
             callback: (response) => this.handleTokenResponse(response),
             error_callback: (error) => this.handleError(error)
         });
@@ -145,10 +183,10 @@ const Auth = {
             return;
         }
 
-        // Verify the granted scopes match what CONFIG.SCOPES requires.
+        // Verify the granted scopes match what the current tier requires.
         // If the user (or Google) downgraded the grant — e.g. they denied
         // a newly-added scope — kick off a one-shot re-consent.
-        const requiredScopes = (CONFIG.SCOPES || '').split(' ').filter(Boolean);
+        const requiredScopes = (this._currentScopes || CONFIG.BASE_SCOPES).split(' ').filter(Boolean);
         const allGranted = (typeof google !== 'undefined'
             && google.accounts?.oauth2?.hasGrantedAllScopes)
             ? google.accounts.oauth2.hasGrantedAllScopes(response, ...requiredScopes)
@@ -426,6 +464,77 @@ const Auth = {
     },
 
     /**
+     * Incremental authorization for Google Drive.
+     *
+     * The base sign-in only grants the non-sensitive userinfo scopes (good
+     * enough for R2). The first time the user actually opens Google Drive we
+     * upgrade the token client to the full scope set (base + Drive) and ask
+     * for consent — this is where the user sees the "unverified app" /
+     * test-user flow, but only if they genuinely use Drive.
+     *
+     * Once granted, _currentScopes stays at the full set so every later
+     * silent refresh keeps Drive access alive. Resolves true on success,
+     * rejects if the user cancels/denies (callers stay on R2).
+     *
+     * MUST be called from a user gesture (button click) so the consent
+     * popup isn't blocked.
+     */
+    ensureDriveAccess() {
+        if (this.hasDriveAccess()) return Promise.resolve(true);
+        if (this._driveConsentPromise) return this._driveConsentPromise;
+        if (!this.tokenClient) {
+            return Promise.reject(new Error('token client not initialized'));
+        }
+
+        const baseScopes = this._currentScopes || CONFIG.BASE_SCOPES;
+        // Switch the persistent token client to the full scope set so the
+        // granted token carries Drive scopes (and still carries email for
+        // R2). initTokenClient() reads this._currentScopes.
+        this._currentScopes = `${CONFIG.BASE_SCOPES} ${CONFIG.DRIVE_SCOPES}`.trim();
+        this.initTokenClient();
+
+        this._driveConsentPromise = new Promise((resolve, reject) => {
+            const origCb = this.tokenClient.callback;
+            const origErr = this.tokenClient.error_callback;
+            const restore = () => {
+                this.tokenClient.callback = origCb;
+                this.tokenClient.error_callback = origErr;
+                this._driveConsentPromise = null;
+            };
+            const rollback = () => {
+                // Drive consent failed/cancelled — drop back to the base
+                // tier so we don't keep asking for Drive on every refresh,
+                // and re-arm the re-consent guard so a later explicit
+                // attempt can prompt again.
+                this._currentScopes = baseScopes;
+                this._reconsentTried = false;
+                this.initTokenClient();
+            };
+            // We are explicitly driving the consent UI here. Mark the
+            // one-shot guard so handleTokenResponse won't *also* fire its
+            // own re-consent popup if the user grants only a subset.
+            this._reconsentTried = true;
+            this.tokenClient.callback = (resp) => {
+                try { origCb?.(resp); } finally { restore(); }
+                if (resp.error) { rollback(); reject(new Error(resp.error)); return; }
+                if (this.hasDriveAccess()) {
+                    resolve(true);
+                } else {
+                    rollback();
+                    reject(new Error('drive_scope_denied'));
+                }
+            };
+            this.tokenClient.error_callback = (err) => {
+                restore();
+                rollback();
+                reject(err instanceof Error ? err : new Error(String(err?.type || 'auth_error')));
+            };
+            this.tokenClient.requestAccessToken({ prompt: 'consent' });
+        });
+        return this._driveConsentPromise;
+    },
+
+    /**
      * Sign out
      */
     signOut() {
@@ -446,8 +555,11 @@ const Auth = {
         Storage.clearUserData();
         Storage.remove(this.EXPIRES_AT_STORAGE_KEY);
         Storage.remove(this.GRANTED_SCOPES_STORAGE_KEY);
-        // Allow a fresh re-consent attempt on the next sign-in.
+        // Allow a fresh re-consent attempt on the next sign-in, and drop
+        // back to the lightweight base scope tier.
         this._reconsentTried = false;
+        this._currentScopes = CONFIG.BASE_SCOPES;
+        if (this.tokenClient) this.initTokenClient();
 
         if (this.onAuthChange) {
             this.onAuthChange(false, null);
