@@ -250,3 +250,125 @@ kuuntelun" -reunatapauksen. Tehdään omana vaiheenaan.
   (Tämä on nykyinenkin tilanne progress-datalle, ei regressio.)
 - **Drive-pickerin** OAuth-token tulee `/auth/token`-kautta; pickerin
   istunto on lyhytikäinen joten ei lisäongelmia.
+
+---
+
+## Liite A: Tarkat setup-ohjeet (kohdat 1–4)
+
+Projektisi tunnistat OAuth-clientista
+`524735149839-e3pfcqlji0ij1f45tpf3af2ivqkosdgg.apps.googleusercontent.com`
+(projektinumero **524735149839**). Valitse Consolen ylä­palkista oikea
+projekti ennen kuin teet alla olevat.
+
+### Kohta 1 — Julkaise sovellus tuotantoon (refresh tokenit lakkaavat vanhenemasta)
+
+Linkki: <https://console.cloud.google.com/auth/audience>
+(vanha polku ohjaa tähän: APIs & Services → OAuth consent screen → Audience)
+
+1. Avaa **Audience**-sivu.
+2. Kohdassa **Publishing status** lukee nyt **Testing**.
+3. Klikkaa **Publish app** → vahvista **Confirm**.
+4. Status muuttuu muotoon **In production**. (Et tarvitse "Prepare for
+   verification" -vaihetta — restricted Drive-scope näyttää käyttäjille
+   varoituksen, mutta sovellus toimii ja refresh tokenit eivät enää vanhene.)
+
+### Kohta 2 — Lisää redirect URI OAuth-clientiin
+
+Linkki: <https://console.cloud.google.com/auth/clients>
+(vanha polku: APIs & Services → Credentials → OAuth 2.0 Client IDs)
+
+1. Klikkaa clientia **"AudioBook Reader Web"** (ID alkaa `524735149839-`).
+2. Etsi osio **Authorized redirect URIs** (eri kuin "Authorized JavaScript
+   origins" — älä sekoita näitä).
+3. Klikkaa **+ Add URI** ja liitä **täsmälleen**:
+
+   ```
+   https://audiobookreader-r2.audiobooks.workers.dev/auth/callback
+   ```
+
+   - Ei loppukauttaviivaa, `https`, polku `/auth/callback`.
+   - Lisää halutessasi myös paikalliskehitystä varten:
+     `http://localhost:8787/auth/callback` (wrangler dev -portti).
+4. **Save**. (Muutos voi näkyä muutaman minuutin viiveellä Googlessa.)
+
+### Kohta 3 — Hae client secret
+
+Samalla client-sivulla (kohta 2) on **Client secret** -kenttä oikealla.
+
+1. Klikkaa **silmä-ikoni / Show** tai lataa JSON (**Download**).
+2. Kopioi `client_secret`-arvo (muotoa `GOCSPX-...`). Tarvitset sen
+   kohdassa 4 (`wrangler secret put GOOGLE_CLIENT_SECRET`).
+3. **Älä** laita sitä git-repoon tai SPA-koodiin — vain Workerin secretiksi.
+
+### Kohta 4 — Cloudflare: KV-namespace + secretit
+
+Aja komennot **`tools/r2-auth-worker/`-hakemistossa** (siellä on
+`wrangler.toml`). Tarvitset Wranglerin (`npm i -g wrangler` tai `npx
+wrangler`) ja `wrangler login` kerran.
+
+**4a. Luo KV-namespace sessioille:**
+
+```bash
+cd tools/r2-auth-worker
+npx wrangler kv namespace create SESSIONS
+```
+
+Komento tulostaa esim.:
+
+```
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "a1b2c3d4e5f6...."
+```
+
+Kopioi tämä lohko `wrangler.toml`-tiedostoon. (Halutessasi
+paikalliskehitykseen myös: `npx wrangler kv namespace create SESSIONS
+--preview` ja lisää `preview_id` samaan lohkoon.)
+
+**4b. Generoi ja tallenna session-salausavain (32 tavua):**
+
+```bash
+openssl rand -base64 32
+npx wrangler secret put SESSION_ENC_KEY
+# liitä yllä generoitu base64-arvo kun se kysyy
+```
+
+**4c. Tallenna Googlen client secret:**
+
+```bash
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+# liitä kohdassa 3 kopioitu GOCSPX-... arvo
+```
+
+**4d. Lisää tarvittaessa app-originit varsiin** (`wrangler.toml`,
+`[vars]`-lohkoon — jos halutaan erottaa redirect/CORS-tarkistus):
+
+```toml
+APP_ORIGINS = "https://anttir.github.io,http://localhost:8000"
+```
+
+`CORS_ALLOWED_ORIGINS` on jo olemassa ja kattaa nämä originit.
+
+**4e. Lopullinen `wrangler.toml` (lisätyt osat) näyttää suunnilleen:**
+
+```toml
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "a1b2c3d4e5f6...."        # 4a:n tuloste
+# preview_id = "...."           # valinnainen
+
+# Secretit EI tähän tiedostoon — ne ovat:
+#   wrangler secret put GOOGLE_CLIENT_SECRET
+#   wrangler secret put SESSION_ENC_KEY
+```
+
+### Tarkistuslista ennen toteutusvaihetta
+
+- [ ] Audience: **In production**
+- [ ] Redirect URI lisätty: `.../auth/callback`
+- [ ] `GOOGLE_CLIENT_SECRET` tallennettu Workerin secretiksi
+- [ ] `SESSION_ENC_KEY` tallennettu Workerin secretiksi
+- [ ] `SESSIONS` KV-namespace luotu ja bindattu `wrangler.toml`:iin
+
+Kun nämä viisi ovat valmiit, vaiheiden 1–2 koodi (Worker `/auth/*` +
+SPA) voidaan toteuttaa ja deployata.
