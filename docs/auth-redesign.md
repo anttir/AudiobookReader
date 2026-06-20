@@ -47,11 +47,14 @@ r2-auth-workerista) toimii luottamuksellisena backendinä:
 2. Google palauttaa **authorization coden** Workerin callback-osoitteeseen.
 3. Worker vaihtaa coden Googlen token-endpointissa (client secret + PKCE)
    **access tokeniksi + refresh tokeniksi**.
-4. Worker **säilyttää refresh tokenin palvelimella** (Cloudflare KV,
-   salattuna) ja antaa selaimelle **oman opaakin session-tokenin**.
+4. Worker **sinetöi refresh tokenin selaimelle annettavaan
+   session-tokeniin** (AES-GCM, avain johdettu `GOOGLE_CLIENT_SECRET`:stä).
+   Session on **tilaton** — refresh token kulkee sinetöitynä itse
+   tokenissa, ei palvelimen KV-säilössä (ks. §4.2).
 5. Kun sovellus tarvitsee tuoreen Google-access-tokenin, se kutsuu Workerin
-   `/auth/token`-endpointtia session-tokenilla; Worker uusii tokenin
-   refresh tokenilla palvelin-palvelin-kutsuna ja palauttaa sen.
+   `/auth/token`-endpointtia session-tokenilla; Worker purkaa sinetin,
+   uusii tokenin refresh tokenilla palvelin-palvelin-kutsuna ja palauttaa
+   sen.
 
 Tämä poistaa iOS-ongelman, koska uusinta **ei enää nojaa kolmannen
 osapuolen evästeisiin eikä piiloiframeen** — se on tavallinen
@@ -64,10 +67,12 @@ Workerin domainille asetettu istuntoeväste olisi github.io:sta katsottuna
 *kolmannen osapuolen eväste*, jonka iOS ITP estää cross-site-fetchissä.
 Sama ongelma eri kuoressa.
 
-Siksi: Worker antaa **opaakin random session-tokenin**, jonka SPA tallentaa
-`localStorage`en ja lähettää `Authorization: Bearer <session>` -headerina.
-`localStorage` on first-party SPA:n originiin nähden eikä kuulu ITP:n
-eväste­sääntöjen piiriin → toimii cross-domain myös iOS:llä.
+Siksi: Worker antaa **session-tokenin** (AES-GCM-sinetöity blob, joka
+sisältää refresh tokenin — ks. §4.2), jonka SPA tallentaa `localStorage`en
+ja lähettää `Authorization: Bearer <session>` -headerina. `localStorage` on
+first-party SPA:n originiin nähden eikä kuulu ITP:n eväste­sääntöjen piiriin
+→ toimii cross-domain myös iOS:llä. (Huom: session-token on pitkäikäinen
+bearer-kredentiaali — uhkamallinnus §6.)
 
 > **Vaihtoehto (jos halutaan HttpOnly-eväste):** hostataan sekä sovellus
 > että Worker **saman rekisteröidyn domainin alle** (esim. sovellus
@@ -111,11 +116,10 @@ Kaikki `/auth/*`-polut; nykyinen R2-proxy jää `/`-juureen ennalleen.
 
 | Endpoint | Tehtävä |
 |---|---|
-| `GET /auth/login` | Luo PKCE-verifier + `state`, tallentaa ne lyhytikäiseen KV-merkintään, redirect Googlen authorization-endpointtiin. Parametrit: `access_type=offline`, `prompt=consent` (jotta refresh token saadaan), `scope`, `code_challenge`, `redirect_uri=<worker>/auth/callback`, `state`. Tukee `?add=drive` → scope = base+drive, `include_granted_scopes=true`. `?return=<app-url>` muistetaan staten kautta. |
-| `GET /auth/callback` | Vahvistaa `state`, vaihtaa coden (PKCE-verifier + client_secret) Googlen token-endpointissa → access+refresh token. Tarkistaa että `email` on allowlistilla (muuten 403, ei sessiota). Tallentaa session KV:hen. Redirect takaisin appiin: `<app-url>#auth=<session-token>`. |
-| `POST /auth/token` | Lukee `Authorization: Bearer <session-token>`. Palauttaa tuoreen Google-access-tokenin (`{ access_token, expires_in, scopes, email, name, picture }`). Uusii refresh tokenilla jos välimuistissa oleva access token on vanha. invalid_grant → 401 (käyttäjä kirjautuu uudelleen). Voi rotatoida session-tokenin. |
-| `POST /auth/upgrade` | (Valinnainen kuori) palauttaa 401/redirect-ohjeen jos Drive-scope puuttuu; käytännössä Drive-laajennus tehdään uudella `/auth/login?add=drive`-kierroksella. |
-| `POST /auth/logout` | Revokoi Googlen refresh tokenin, poistaa session KV:stä. |
+| `GET /auth/login` | Luo PKCE-verifier + `state`, tallentaa ne **lyhytikäiseen first-party-evästeeseen** (`abr_login`, HttpOnly, Path=/auth), redirect Googlen authorization-endpointtiin. Parametrit: `access_type=offline`, `prompt=consent` (jotta refresh token saadaan), `scope`, `code_challenge`, `redirect_uri=<worker>/auth/callback`, `state`. Tukee `?add=drive` → scope = base+drive, `include_granted_scopes=true`. `?return=<app-url>` muistetaan eväste­tilan kautta. |
+| `GET /auth/callback` | Lukee `abr_login`-evästeen, vahvistaa `state`, vaihtaa coden (PKCE-verifier + client_secret) Googlen token-endpointissa → access+refresh token. Tarkistaa että `email` on allowlistilla (muuten redirect `#auth_error=forbidden`). **Sinetöi session-tokenin** (sis. refresh tokenin) ja redirect appiin: `<app-url>#auth=<session-token>`. Ei KV:tä. |
+| `POST /auth/token` | Lukee `Authorization: Bearer <session-token>`, purkaa sinetin, uusii refresh tokenilla → palauttaa `{ access_token, expires_in, scopes, email, name, picture }` (`Cache-Control: no-store`). 401/403 = sessio mitätön (käyttäjä kirjautuu uudelleen); muut virheet ohimeneviä. |
+| `POST /auth/logout` | Purkaa session-tokenin ja revokoi Googlen refresh tokenin (`/revoke`). Ei palvelinpuolen tilaa poistettavana. |
 
 ### 4.2 Session — tilaton (stateless), ei KV:tä tarvita
 
@@ -207,22 +211,27 @@ kuuntelun" -reunatapauksen. Tehdään omana vaiheenaan.
 ## 6. Tietoturva
 
 - **client_secret** vain Workerin secrettinä — ei koskaan repoon tai SPA:han.
-- **PKCE** suojaa coden; **state** estää CSRF:n callbackissa.
-- Session-token: kryptografisesti satunnainen (32 tavua, base64url).
-  KV:hen talletetaan vain **hash** (sha256) → KV-vuoto ei paljasta
-  käyttökelpoisia tokeneita.
-- Refresh token **salataan levossa** (AES-GCM, `SESSION_ENC_KEY`).
-- Session-tokenin **rotaatio** jokaisella `/auth/token`-kutsulla (race-grace)
-  → varastetun tokenin elinikä lyhenee.
+- **PKCE** suojaa coden; **state** estää CSRF:n callbackissa (verifier +
+  state lyhytikäisessä HttpOnly-evästeessä, ei URL:ssa).
+- **Session-token = sinetöity blob**, ei satunnainen viittaus: refresh token
+  on AES-GCM-salattuna itse tokenissa. Salausavain **johdetaan
+  `GOOGLE_CLIENT_SECRET`:stä HKDF:llä** — ei erillistä avainta, ei KV:tä.
+  AES-GCM-tunniste estää peukaloinnin (väärä/muokattu token hylätään).
+- **`/auth/token` palauttaa `Cache-Control: no-store`** — access tokenia ei
+  tallenneta välimuisteihin.
 - **CORS**: `/auth/token` sallii vain app-originit; bearer-header, ei
   evästeitä, joten `credentials:'include'` ei tarvita.
 - **Allowlist** tarkistetaan jo `/auth/callback`issa (ei sessiota
   ei-sallitulle) ja edelleen R2-fetchissä.
+- **Absoluuttinen maksimi-ikä:** session-tokenin `iat` rajaa eliniän (90
+  vrk), minkä jälkeen pakotettu uudelleenkirjautuminen.
+- **Revokointi:** `/auth/logout` revokoi refresh tokenin Googlella (kuolee
+  kaikkialla). Tilattomassa mallissa **ei per-laite-revokointia** — se
+  vaatisi KV-session-säilön (valinnainen päivitys, §4.2).
 - **XSS-huomio:** session-token localStoragessa on pitkäikäinen bearer-
-  kredentiaali → sama vahinkosäde kuin nykyisellä access tokenilla, mutta
-  pidempi. Mitigoidaan rotaatiolla, absoluuttisella maksimi-iällä ja
-  revokoinnilla. (Eväste-HttpOnly-malli vaihe-2-vaihtoehtona poistaa tämän,
-  ks. §2.)
+  kredentiaali (sisältää sinetöidyn refresh tokenin). Vahinkosäde on
+  suurempi kuin pelkällä access tokenilla; jos XSS on uhkamallissa, harkitse
+  §2:n HttpOnly-eväste­mallia (vaatii saman domainin hostingin).
 
 ## 7. Manuaaliset askeleet (kaikki puhelimen selaimella, ei komentoriviä)
 

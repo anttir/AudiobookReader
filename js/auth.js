@@ -182,8 +182,10 @@ const Auth = {
             }
             if (!resp.ok) {
                 const e = new Error(`auth_token_${resp.status}`);
-                // 401/403 = session no longer valid. Other 4xx/5xx we also
-                // treat as auth-invalid here (the session can't be used).
+                // Only 401/403 mean the session is genuinely invalid (→ sign
+                // out). Everything else (5xx, 429, other transient failures)
+                // is treated as recoverable, so a Worker/Google blip doesn't
+                // bounce a listening user back to the login screen.
                 e.authInvalid = resp.status === 401 || resp.status === 403;
                 throw e;
             }

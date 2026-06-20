@@ -376,9 +376,9 @@ const App = {
     },
 
     /**
-     * Open Google Picker so the user grants the app access to a folder.
-     * Required by the drive.file OAuth scope — we can't list root or
-     * arbitrary folders, only ones the user has picked here.
+     * Open Google Picker so the user selects the folder containing their
+     * books. Uses the granted drive.readonly scope; the Picker gives the
+     * user a familiar way to navigate their Drive and pick a folder id.
      */
     async openFolderPicker() {
         // Picking a folder needs the Drive scopes. If the user reached the

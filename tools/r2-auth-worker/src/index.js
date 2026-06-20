@@ -125,10 +125,16 @@ async function handleAuthCallback(request, env, url) {
         });
     }
 
-    // From here we can redirect back into the app with an error fragment.
+    // From here we can redirect back into the app with an error or, on
+    // success, the session token in the fragment. Mark no-store so the
+    // redirect (which may carry #auth=<session>) is never cached.
     const back = (frag) => new Response(null, {
         status: 302,
-        headers: new Headers([['Location', `${st.ret}#${frag}`], ['Set-Cookie', clear]]),
+        headers: new Headers([
+            ['Location', `${st.ret}#${frag}`],
+            ['Set-Cookie', clear],
+            ['Cache-Control', 'no-store'],
+        ]),
     });
 
     const err = url.searchParams.get('error');
@@ -273,6 +279,10 @@ function authCors(request, env) {
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Authorization, Content-Type',
         'Access-Control-Max-Age': '3600',
+        // /auth/token returns a fresh OAuth access token — never let any
+        // cache (browser or intermediary) store it.
+        'Cache-Control': 'no-store',
+        'Pragma': 'no-cache',
     };
 }
 
