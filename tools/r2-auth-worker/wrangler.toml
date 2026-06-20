@@ -1,12 +1,22 @@
-# Cloudflare Worker config for the AudiobookReader R2 auth proxy.
+# Cloudflare Worker config for the AudiobookReader Worker (R2 proxy + /auth).
 #
 # Customise:
 #   - `name`: appears in the deployed URL as <name>.<account>.workers.dev
 #   - `bucket_name`: must match your R2 bucket
 #   - `ALLOWED_EMAILS`: comma-separated Google account allowlist
 #   - `CORS_ALLOWED_ORIGINS`: origins from which the web app makes requests
+#     (also the set of allowed /auth/login return origins, unless APP_ORIGINS
+#     is set)
 #   - `GOOGLE_CLIENT_ID`: pin to your OAuth client so foreign tokens are
 #     rejected (set to "" to skip audience verification)
+#
+# SECRET (NOT in this file — set via dashboard or `wrangler secret put`):
+#   - `GOOGLE_CLIENT_SECRET`: OAuth web client secret. Required by the
+#     /auth/* Authorization-Code flow. The session-encryption key is derived
+#     from it (HKDF), so there is no separate key/secret to manage.
+#   Add it in the Cloudflare dashboard:
+#     Workers & Pages → this worker → Settings → Variables and Secrets →
+#     Add → type Secret → name GOOGLE_CLIENT_SECRET.
 
 name = "audiobookreader-r2"
 main = "src/index.js"

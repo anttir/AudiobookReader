@@ -120,6 +120,14 @@ const CONFIG = {
     // This is safe to commit to a public repo: the URL is gated by the
     // r2-auth-worker which only serves to allowlisted Google accounts.
     R2_DEFAULT_BASE_URL: 'https://audiobookreader-r2.audiobooks.workers.dev',
+
+    // Base URL of the Worker that hosts the OAuth Authorization-Code backend
+    // (/auth/login, /auth/callback, /auth/token, /auth/logout). This is the
+    // same Worker as the default R2 proxy. Sign-in redirects here; token
+    // refresh POSTs to <AUTH_BASE_URL>/auth/token. Fixed (not the
+    // user-overridable R2 baseUrl) because auth always goes through the
+    // canonical Worker.
+    AUTH_BASE_URL: 'https://audiobookreader-r2.audiobooks.workers.dev',
 };
 
 // Freeze config to prevent accidental modifications
