@@ -1,8 +1,11 @@
 # Kirjautumisen lopullinen korjaus — suunnitelma
 
-> Tila: **suunnitelma / design** (ei vielä toteutettu). Tämä dokumentti
-> kuvaa miten kirjautumisongelma ratkaistaan lopullisesti, myös iOS
-> Safarissa, jossa nykyinen hiljainen token-refresh ei toimi.
+> Tila: **toteutettu branchissa `claude/ios-auth-audiobook-bugs-yguiks`**,
+> odottaa (a) sinun manuaaliset askeleet (Liite A, kohdat 1–4) ja (b)
+> branchin yhdistämistä `main`:iin (jolloin SPA → GitHub Pages ja Worker →
+> Cloudflare deployautuvat). Worker (`/auth/*`) ja SPA (`js/auth.js`
+> redirect + `/auth/token`) ovat valmiina. Tämä dokumentti kuvaa miten
+> kirjautumisongelma ratkaistaan lopullisesti, myös iOS Safarissa.
 
 ## 1. Mistä ongelma johtuu (juurisyy)
 

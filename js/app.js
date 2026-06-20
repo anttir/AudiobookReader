@@ -365,23 +365,14 @@ const App = {
     },
 
     /**
-     * Request the incremental Drive consent (sensitive scopes) and, on
-     * success, kick off cross-device sync + reload the library. Invoked
-     * from the "Yhdistä Google Drive" CTA — a user gesture, so the consent
-     * popup isn't blocked.
+     * Start the incremental Drive consent (sensitive scopes). This is a
+     * full-page redirect to Google via the Worker; the app reloads on
+     * return. Once back with Drive scopes granted, onAuthChange initialises
+     * cross-device sync and loadLibrary renders the Drive library. Invoked
+     * from the "Yhdistä Google Drive" CTA.
      */
-    async connectDrive() {
-        try {
-            await Auth.ensureDriveAccess();
-        } catch (e) {
-            // User cancelled or denied — stay on R2-friendly state.
-            this.showToast('Google Drive -lupa peruttiin', 'info');
-            return;
-        }
-        if (typeof Sync !== 'undefined') {
-            Sync.init().then(() => this.renderLibrary?.());
-        }
-        await this.loadLibrary();
+    connectDrive() {
+        Auth.startDriveUpgrade();
     },
 
     /**
@@ -390,13 +381,14 @@ const App = {
      * arbitrary folders, only ones the user has picked here.
      */
     async openFolderPicker() {
+        // Picking a folder needs the Drive scopes. If the user reached the
+        // picker button without having granted them yet, start the consent
+        // redirect instead (the page navigates away and returns granted).
+        if (typeof Auth !== 'undefined' && !Auth.hasDriveAccess?.()) {
+            Auth.startDriveUpgrade();
+            return;
+        }
         try {
-            // Picking a folder needs the Drive scopes. If the user reached
-            // the picker button without having granted them yet, request
-            // consent first (this call is inside a click handler).
-            if (typeof Auth !== 'undefined' && !Auth.hasDriveAccess?.()) {
-                await Auth.ensureDriveAccess();
-            }
             const folder = await Drive.pickFolder();
             if (!folder) return;
             this.currentFolder = folder;
