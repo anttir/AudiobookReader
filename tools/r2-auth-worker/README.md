@@ -1,11 +1,32 @@
 # r2-auth-worker
 
-Cloudflare Worker that gates the private R2 bucket behind Google Sign-In.
-The web app sends its Google OAuth access token as
-`Authorization: Bearer …`; the Worker verifies the token against Google,
-checks the resolved email against `ALLOWED_EMAILS`, and streams the
-requested R2 object back to the client (preserving `Range` headers so
-HLS keeps working).
+Cloudflare Worker with two responsibilities, routed by path:
+
+- **`/auth/*` — OAuth Authorization Code + PKCE backend.** The Worker holds
+  the Google client secret, exchanges the auth code for an access + refresh
+  token, and returns the browser an opaque **encrypted session token** (the
+  refresh token is sealed inside it — stateless, no KV). The SPA stores it in
+  localStorage and calls `POST /auth/token` to mint fresh Google access
+  tokens. This replaces the GIS hidden-iframe silent refresh that iOS Safari
+  ITP blocks, so logins survive on iPhone. See
+  [`../../docs/auth-redesign.md`](../../docs/auth-redesign.md).
+- **everything else — the R2 proxy.** The web app sends a Google OAuth access
+  token as `Authorization: Bearer …` (or `?_token=`); the Worker verifies it
+  against Google, checks the email against `ALLOWED_EMAILS`, and streams the
+  requested R2 object (preserving `Range` so HLS keeps working).
+
+## /auth endpoints
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/auth/login?return=<app-url>[&add=drive]` | GET | Redirect to Google consent (PKCE). `add=drive` requests the incremental Drive scopes. |
+| `/auth/callback` | GET | Exchange code → seal session → redirect to `<app-url>#auth=<session>`. |
+| `/auth/token` | POST | `Authorization: Bearer <session>` → `{ access_token, expires_in, scopes, email, name, picture }`. |
+| `/auth/logout` | POST | Revoke the refresh token at Google. |
+
+Requires the **`GOOGLE_CLIENT_SECRET`** secret (see wrangler.toml) and the
+OAuth client must list `https://<worker>/auth/callback` as an Authorized
+redirect URI.
 
 After this is deployed the Worker URL replaces the `pub-*.r2.dev` URL in
 the web app's R2 settings — so the bucket can be flipped to private
