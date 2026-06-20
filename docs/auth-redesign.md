@@ -114,33 +114,50 @@ Kaikki `/auth/*`-polut; nykyinen R2-proxy jää `/`-juureen ennalleen.
 | `POST /auth/upgrade` | (Valinnainen kuori) palauttaa 401/redirect-ohjeen jos Drive-scope puuttuu; käytännössä Drive-laajennus tehdään uudella `/auth/login?add=drive`-kierroksella. |
 | `POST /auth/logout` | Revokoi Googlen refresh tokenin, poistaa session KV:stä. |
 
-### 4.2 Session-säilö (Cloudflare KV)
+### 4.2 Session — tilaton (stateless), ei KV:tä tarvita
+
+Jotta puhelimella (ilman komentoriviä) ei tarvitse luoda KV-namespacea,
+sessiot ovat **tilattomia**: selaimelle annettava "session-token" on
+**salattu + allekirjoitettu blob**, joka sisältää itse refresh tokenin ja
+käyttäjätiedot:
 
 ```
-key:   sha256(sessionToken)          // ei talleteta tokenia itseään
-value: {
-  refreshTokenEnc,   // AES-GCM-salattu Worker-secretillä
-  scopes,            // myönnetyt scopet (base / base+drive)
-  email, sub, name, picture,
-  createdAt, lastUsedAt
-}
+session-token = base64url( AES-GCM-encrypt(
+   key = HKDF(GOOGLE_CLIENT_SECRET),       // johdetaan, ei omaa secretiä
+   payload = { refreshToken, email, sub, scopes, name, picture, iat }
+))
 ```
 
-- Access tokenin välimuisti: erillinen KV-merkintä TTL:llä (= tokenin
-  `expires_in − 60s`), tai Workerin in-memory cache per pyyntö. Vältetään
-  Googlen token-endpointin kutsuminen joka kerta.
-- Vaihtoehto vahvalle konsistenssille: Durable Object KV:n sijaan.
+- `/auth/token` purkaa blobin, käyttää refresh tokenia uuden access tokenin
+  hakuun Googlelta, ja palauttaa access tokenin selaimelle.
+- **Salausavain johdetaan `GOOGLE_CLIENT_SECRET`:stä** (HKDF) → ei erillistä
+  `SESSION_ENC_KEY`-secretiä, ei `openssl`-komentoa.
+- **Login-kierroksen** (PKCE-verifier + `state`) väliaikaistila tallennetaan
+  lyhytikäiseen, allekirjoitettuun **HttpOnly-evästeeseen Workerin
+  domainilla**. Tämä toimii, koska `/auth/login → Google → /auth/callback`
+  on top-level-navigaatio Workerin originiin → eväste on first-party (ITP
+  sallii). Ei vaadi KV:tä.
+- **Uloskirjautuminen/revokointi:** `/auth/logout` revokoi refresh tokenin
+  Googlella (= kuolee kaikkialla). Yksittäisen laitteen erillis­revokointi
+  ei tilattomassa mallissa onnistu ilman serverivarastoa — riittää tälle
+  käyttäjäkunnalle.
+- Absoluuttinen maksimi-ikä payloadin `iat`-kentästä (esim. 90 vrk) → sen
+  jälkeen pakotettu uudelleenkirjautuminen.
+
+> **Valinnainen päivitys myöhemmin:** jos halutaan per-laite-revokointi,
+> lisätään Cloudflare KV ja talletetaan sessiot sinne (key =
+> `sha256(token)`). Ei tarpeen aluksi.
 
 ### 4.3 Workerin uudet salaisuudet/varsit
 
 | Nimi | Tyyppi | Selitys |
 |---|---|---|
-| `GOOGLE_CLIENT_SECRET` | secret | OAuth Web-clientin secret (Console → Credentials). |
-| `SESSION_ENC_KEY` | secret | 32-tavuinen avain refresh tokenin AES-GCM-salaukseen. |
-| `SESSIONS` (KV namespace) | binding | Session-säilö. |
-| `APP_ORIGINS` | var | Sallitut app-originit redirect/postMessage-tarkistukseen. |
+| `GOOGLE_CLIENT_SECRET` | **secret** | OAuth Web-clientin secret. **Ainoa pakollinen uusi secret.** Tästä johdetaan myös session-salausavain (HKDF). |
+| `APP_ORIGINS` | var (valinn.) | Sallitut app-originit redirect-tarkistukseen. Oletus = `CORS_ALLOWED_ORIGINS`. |
 
-`GOOGLE_CLIENT_ID` on jo olemassa. `wrangler secret put GOOGLE_CLIENT_SECRET`.
+`GOOGLE_CLIENT_ID` on jo olemassa. **Ei KV:tä, ei erillistä enc-keytä.**
+Secretin voi asettaa **Cloudflare-dashboardista** (ei vaadi komentoriviä —
+ks. Liite A, B-vaihtoehto).
 
 ## 5. SPA-muutokset (`js/auth.js` ym.)
 
@@ -204,24 +221,25 @@ kuuntelun" -reunatapauksen. Tehdään omana vaiheenaan.
   revokoinnilla. (Eväste-HttpOnly-malli vaihe-2-vaihtoehtona poistaa tämän,
   ks. §2.)
 
-## 7. Manuaaliset Google Cloud Console -askeleet (käyttäjä)
+## 7. Manuaaliset askeleet (kaikki puhelimen selaimella, ei komentoriviä)
 
-1. **OAuth consent screen → Publishing status → Publish app (In
-   production).** (Tämä ikuistaa refresh tokenit.)
-2. **Credentials → OAuth Web client → Authorized redirect URIs → lisää**
-   `https://<worker-domain>/auth/callback`.
-3. **Kopioi client secret** samasta clientistä → `wrangler secret put
-   GOOGLE_CLIENT_SECRET`.
-4. Luo KV namespace (`wrangler kv namespace create SESSIONS`) ja bindaa
-   `wrangler.toml`:iin. Aseta `SESSION_ENC_KEY` secret.
-5. (Drive API on jo päällä.)
+Tarkat klikkausohjeet Liitteessä A.
+
+1. **Google Auth Platform → Audience → Publish app (In production).**
+   (Ikuistaa refresh tokenit.)
+2. **Google Auth Platform → Clients → OAuth Web client → Authorized
+   redirect URIs → lisää** `https://<worker>/auth/callback`.
+3. **Kopioi client secret** ja tallenna se **Cloudflare-dashboardista**
+   Workerin secretiksi `GOOGLE_CLIENT_SECRET` (Liite A, kohta 4B).
+4. **Workerin deploy** Git-yhteydellä dashboardista (Liite B).
+5. (Drive API on jo päällä; ei KV:tä eikä erillistä enc-keytä.)
 
 ## 8. Vaiheistus / rollout
 
-- **Vaihe 0 (manuaalinen):** julkaisutila → production, redirect URI,
-  client secret, KV, enc-key.
-- **Vaihe 1 (Worker):** `/auth/*`-endpointit + KV-sessiot. Deploy. Testaa
-  curlilla / desktop-selaimella.
+- **Vaihe 0 (manuaalinen, puhelin):** julkaisutila → production, redirect
+  URI, `GOOGLE_CLIENT_SECRET` dashboardiin, worker-deploy Gitistä.
+- **Vaihe 1 (Worker):** `/auth/*`-endpointit, tilattomat sessiot. Deploy.
+  Testaa desktop-selaimella.
 - **Vaihe 2 (SPA):** vaihda `signIn`/`refreshToken`/`ensureDriveAccess`
   redirect+`/auth/token`-malliin; lue callback-fragmentti; poista GIS-
   skripti. Säilytä kahden tason scopet. Bumppaa `?v=`.
@@ -297,78 +315,60 @@ Samalla client-sivulla (kohta 2) on **Client secret** -kenttä oikealla.
 
 1. Klikkaa **silmä-ikoni / Show** tai lataa JSON (**Download**).
 2. Kopioi `client_secret`-arvo (muotoa `GOCSPX-...`). Tarvitset sen
-   kohdassa 4 (`wrangler secret put GOOGLE_CLIENT_SECRET`).
+   kohdassa 4.
 3. **Älä** laita sitä git-repoon tai SPA-koodiin — vain Workerin secretiksi.
 
-### Kohta 4 — Cloudflare: KV-namespace + secretit
+### Kohta 4 — Cloudflare: tallenna client secret
 
-Aja komennot **`tools/r2-auth-worker/`-hakemistossa** (siellä on
-`wrangler.toml`). Tarvitset Wranglerin (`npm i -g wrangler` tai `npx
-wrangler`) ja `wrangler login` kerran.
+Tilattoman mallin (§4.2) ansiosta **ei tarvita KV:tä eikä erillistä
+salausavainta** — ainoa Cloudflaren puolen asetus on yksi secret:
+`GOOGLE_CLIENT_SECRET`. Sen voi tehdä joko komentoriviltä **tai
+dashboardista** (B-vaihtoehto sopii puhelimelle).
 
-**4a. Luo KV-namespace sessioille:**
+**A) Komentorivi (jos koneella on wrangler):**
 
 ```bash
 cd tools/r2-auth-worker
-npx wrangler kv namespace create SESSIONS
+npx wrangler secret put GOOGLE_CLIENT_SECRET   # liitä GOCSPX-... arvo
 ```
 
-Komento tulostaa esim.:
+**B) Dashboard, ilman komentoriviä (kännykkä):**
 
-```
-[[kv_namespaces]]
-binding = "SESSIONS"
-id = "a1b2c3d4e5f6...."
-```
+1. Avaa <https://dash.cloudflare.com> → **Workers & Pages** → worker
+   **`audiobookreader-r2`**.
+2. **Settings** → **Variables and Secrets** (tai "Environment variables").
+3. **+ Add** → Type: **Secret** → Name: `GOOGLE_CLIENT_SECRET`, Value:
+   `GOCSPX-...` → **Save / Deploy**.
 
-Kopioi tämä lohko `wrangler.toml`-tiedostoon. (Halutessasi
-paikalliskehitykseen myös: `npx wrangler kv namespace create SESSIONS
---preview` ja lisää `preview_id` samaan lohkoon.)
+> Huom: jos worker deployataan Git-yhteyden kautta (ks. Liite B), aseta
+> secret **Production-ympäristöön** dashboardissa.
 
-**4b. Generoi ja tallenna session-salausavain (32 tavua):**
+### Liite B — Workerin deploy ilman komentoriviä (kännykkä)
 
-```bash
-openssl rand -base64 32
-npx wrangler secret put SESSION_ENC_KEY
-# liitä yllä generoitu base64-arvo kun se kysyy
-```
+Koska et voi ajaa `wrangler deploy`-komentoa, kytketään worker
+**deployaamaan Gitistä automaattisesti** (kuten GitHub Pages tekee
+SPA:lle). Tämä on kertaluontoinen dashboard-asetus, minkä jälkeen jokainen
+agentin pushaama muutos deployaa workerin itsestään.
 
-**4c. Tallenna Googlen client secret:**
+1. <https://dash.cloudflare.com> → **Workers & Pages**.
+2. Worker `audiobookreader-r2` → **Settings** → **Build** → **Connect**
+   (Workers Builds / "Connect to Git").
+3. Valitse repo **anttir/AudiobookReader**, branch (esim. `main`),
+   **Root directory** = `tools/r2-auth-worker`, build command tyhjä,
+   deploy command oletus (`npx wrangler deploy`).
+4. Tallenna. Jatkossa push → automaattinen worker-deploy.
 
-```bash
-npx wrangler secret put GOOGLE_CLIENT_SECRET
-# liitä kohdassa 3 kopioitu GOCSPX-... arvo
-```
-
-**4d. Lisää tarvittaessa app-originit varsiin** (`wrangler.toml`,
-`[vars]`-lohkoon — jos halutaan erottaa redirect/CORS-tarkistus):
-
-```toml
-APP_ORIGINS = "https://anttir.github.io,http://localhost:8000"
-```
-
-`CORS_ALLOWED_ORIGINS` on jo olemassa ja kattaa nämä originit.
-
-**4e. Lopullinen `wrangler.toml` (lisätyt osat) näyttää suunnilleen:**
-
-```toml
-[[kv_namespaces]]
-binding = "SESSIONS"
-id = "a1b2c3d4e5f6...."        # 4a:n tuloste
-# preview_id = "...."           # valinnainen
-
-# Secretit EI tähän tiedostoon — ne ovat:
-#   wrangler secret put GOOGLE_CLIENT_SECRET
-#   wrangler secret put SESSION_ENC_KEY
-```
+> Vaihtoehto (jos Git-yhteys ei toimi): worker on **yksi tiedosto**
+> (`src/index.js`), joten sen voi myös liittää dashboardin koodieditoriin
+> (worker → **Edit code** → liitä → **Deploy**). Työläämpää puhelimella.
 
 ### Tarkistuslista ennen toteutusvaihetta
 
-- [ ] Audience: **In production**
-- [ ] Redirect URI lisätty: `.../auth/callback`
-- [ ] `GOOGLE_CLIENT_SECRET` tallennettu Workerin secretiksi
-- [ ] `SESSION_ENC_KEY` tallennettu Workerin secretiksi
-- [ ] `SESSIONS` KV-namespace luotu ja bindattu `wrangler.toml`:iin
+- [ ] Audience: **In production** (kohta 1)
+- [ ] Redirect URI lisätty: `.../auth/callback` (kohta 2)
+- [ ] `GOOGLE_CLIENT_SECRET` tallennettu Workerin secretiksi (kohta 4)
+- [ ] Workerin deploy-tapa valittu (Liite B: Git-yhteys tai editori)
 
-Kun nämä viisi ovat valmiit, vaiheiden 1–2 koodi (Worker `/auth/*` +
-SPA) voidaan toteuttaa ja deployata.
+Kaikki nämä onnistuvat puhelimen selaimella. Kun ne ovat valmiit (tai
+rinnakkain agentin koodatessa), Worker `/auth/*` + SPA-muutokset
+deployataan.
