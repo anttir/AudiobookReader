@@ -100,7 +100,12 @@ async function handleAuthLogin(request, env, url) {
     auth.searchParams.set('scope', scope);
     auth.searchParams.set('access_type', 'offline');     // → refresh token
     auth.searchParams.set('prompt', 'consent');          // ensure refresh token issued
-    auth.searchParams.set('include_granted_scopes', 'true');
+    // NB: we deliberately do NOT set include_granted_scopes. With it, Google
+    // merges any scopes the user previously granted to this client into the
+    // current request — so a returning user who once granted Drive would get
+    // the sensitive Drive scopes (and the "unverified app" warning) pulled
+    // back into a plain base-scope sign-in. We always request exactly the
+    // scopes for this tier (base, or base+drive when add=drive), nothing more.
     auth.searchParams.set('state', state);
     auth.searchParams.set('code_challenge', challenge);
     auth.searchParams.set('code_challenge_method', 'S256');
