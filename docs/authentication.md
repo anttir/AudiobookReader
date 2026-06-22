@@ -13,8 +13,11 @@ arkaluonteisia Drive-oikeuksia:
 
 | Taso | Scopet | Milloin | Consent |
 |---|---|---|---|
-| **Perus** | `openid`, `userinfo.email`, `userinfo.profile` | sisäänkirjautuessa | ei-arkaluonteinen → siisti tilinvalinta |
-| **Drive** | `drive.readonly`, `drive.appdata` | vasta kun käyttäjä avaa Google Drive -lähteen | arkaluonteinen → näyttää vahvistamattoman sovelluksen varoituksen |
+| **Perus** | `openid` · `https://www.googleapis.com/auth/userinfo.email` · `https://www.googleapis.com/auth/userinfo.profile` | sisäänkirjautuessa | ei-arkaluonteinen → siisti tilinvalinta |
+| **Drive** | `https://www.googleapis.com/auth/drive.readonly` · `https://www.googleapis.com/auth/drive.appdata` | vasta kun käyttäjä avaa Google Drive -lähteen | arkaluonteinen → näyttää vahvistamattoman sovelluksen varoituksen |
+
+Tarkat scope-merkkijonot ovat `js/config.js`:ssä (`BASE_SCOPES` / `DRIVE_SCOPES`)
+ja workerissa (`SCOPE_BASE` / `SCOPE_DRIVE`).
 
 Perus-taso riittää sekä kirjautumiseen että Cloudflare R2 -kuunteluun
 (auth-worker tarkistaa vain että token on voimassa ja sähköposti on
@@ -55,10 +58,10 @@ sisältää refresh tokenin ja käyttäjätiedot. Palvelimella ei ole istuntotil
 (ei KV:tä):
 
 ```
-session-token = base64url( AES-GCM-encrypt(
-   key = HKDF(GOOGLE_CLIENT_SECRET),
-   payload = { refreshToken, email, sub, scopes, name, picture, iat }
-))
+session-token = "v1." + base64url(iv) + "." + base64url(ciphertext)
+   ciphertext = AES-GCM-encrypt(key, JSON(payload))
+   key        = HKDF(GOOGLE_CLIENT_SECRET)
+   payload    = { rt, email, sub, scopes, name, picture, iat }   // rt = refresh token
 ```
 
 - Salausavain johdetaan `GOOGLE_CLIENT_SECRET`:stä (HKDF), joten erillistä
