@@ -39,7 +39,7 @@ jossa vanha selainpohjainen hiljainen uusinta ei toiminut.
 
 Scopet ovat kaksiportaiset: kevyt perus-login (R2) ja erikseen pyydettävät
 Drive-oikeudet. Koko malli, perustelut ja setup-runbook:
-**[auth-redesign.md](auth-redesign.md)**.
+**[authentication.md](authentication.md)**.
 
 ## Edistyminen ja synkronointi
 
