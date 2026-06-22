@@ -43,11 +43,11 @@ R2-puolella kirjat määritellään `index.json`-manifestissa — ks.
 
 ## Näppäinkomennot
 
-| Näppäin | Toiminto |
-|---------|----------|
-| `←` / `→` | Edellinen/seuraava sivu (PDF/EPUB) |
-| `Space` | Toista/pysäytä (audio) |
-| `←` / `→` | Kelaa 10 s (audio-tilassa) |
+| Tila | Näppäin | Toiminto |
+|---|---|---|
+| PDF/EPUB | `←` / `→` | Edellinen/seuraava sivu |
+| Audio | `Space` | Toista/pysäytä |
+| Audio | `←` / `→` | Kelaa 10 s |
 
 ## Mobiilieleet
 
