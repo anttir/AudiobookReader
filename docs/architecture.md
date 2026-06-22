@@ -5,9 +5,9 @@ build-vaihetta) tarjoiltuna GitHub Pagesilta, plus yksi Cloudflare Worker
 joka hoitaa autentikoinnin ja R2-sisällön välityksen.
 
 ```
-Selain (PWA, GitHub Pages)                 Cloudflare Worker            Google
-  js/app.js        UI + näkymät              /auth/*  OAuth-backend  ──▶  OAuth / Drive API
-  js/auth.js       sessio + token            /<key>   R2-proxy       ──▶  R2 bucket
+Selain (PWA, GitHub Pages)                 Cloudflare Worker            Google / Cloudflare
+  js/app.js        UI + näkymät              /auth/*  OAuth-backend  ──▶  Google OAuth / Drive API
+  js/auth.js       sessio + token            /<key>   R2-proxy       ──▶  Cloudflare R2 bucket
   js/providers/*   tallennuslähteet
   js/audioplayer   hls.js / <audio>
 ```
