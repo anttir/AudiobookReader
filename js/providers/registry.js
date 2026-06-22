@@ -62,10 +62,14 @@ const Providers = {
     },
 };
 
-// Register built-in providers. Order here determines UI order.
-if (typeof DriveProvider !== 'undefined') {
-    Providers.register(DriveProvider);
-}
+// Register built-in providers. Order here determines UI tab order, so R2
+// (the no-extra-consent, listen-only source most users want) is registered
+// first and renders as the leftmost / default tab. Google Drive is second:
+// opening it is what triggers the sensitive-scope "unverified app" consent,
+// so it must be an explicit user choice, never the landing tab.
 if (typeof R2Provider !== 'undefined') {
     Providers.register(R2Provider);
+}
+if (typeof DriveProvider !== 'undefined') {
+    Providers.register(DriveProvider);
 }
