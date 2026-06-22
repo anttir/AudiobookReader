@@ -9,7 +9,7 @@ Selain (PWA, GitHub Pages)                 Cloudflare Worker            Google /
   js/app.js        UI + näkymät              /auth/*  OAuth-backend  ──▶  Google OAuth / Drive API
   js/auth.js       sessio + token            /<key>   R2-proxy       ──▶  Cloudflare R2 bucket
   js/providers/*   tallennuslähteet
-  js/audioplayer   hls.js / <audio>
+  js/audioplayer.js  hls.js / <audio>
 ```
 
 ## Tallennuslähteet (providers)
