@@ -66,6 +66,18 @@
             </div>
 
             <p class="info-text">Kirjautuminen vaatii vain nimesi ja sähköpostisi. Google Drive -lupa kysytään erikseen vain jos avaat Drive-kirjaston.</p>
+
+            <details class="login-help" style="margin-top: 18px; font-size: 0.85rem; color: var(--text-secondary); text-align: left;">
+                <summary style="cursor: pointer; text-align: center;">Näkyykö "Google ei ole vahvistanut sovellusta"?</summary>
+                <div style="margin-top: 10px;">
+                    <p style="margin: 0 0 8px 0;">Jos olet käyttänyt sovellusta aiemmin, Google muistaa silloin myönnetyt Drive-oikeudet ja näyttää varoituksen. Poista ne kerran, niin jatkossa kirjautuminen on kevyt (vain nimi + sähköposti, ei Drive-oikeuksia):</p>
+                    <ol style="padding-left: 20px; margin: 0;">
+                        <li>Avaa <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer">Google-tilin oikeudet</a></li>
+                        <li>Valitse <strong>AudioBook Reader</strong> → <strong>Poista käyttöoikeus / Remove access</strong></li>
+                        <li>Palaa tähän ja kirjaudu uudelleen</li>
+                    </ol>
+                </div>
+            </details>
         </div>
     </div>
 
@@ -296,6 +308,10 @@
                         <span id="settings-user-name">Käyttäjä</span>
                     </div>
                     <button id="logout-btn" class="danger-btn">Kirjaudu ulos</button>
+                    <p class="info-text" style="margin: 10px 0 0 0;">
+                        Haluatko poistaa sovelluksen Google-oikeudet kokonaan (esim. aiemmin myönnetyn Drive-luvan)?
+                        <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer">Hallitse Google-oikeuksia</a> → valitse AudioBook Reader → Poista käyttöoikeus. Kirjaudu sitten uudelleen.
+                    </p>
                 </div>
             </div>
         </div>
