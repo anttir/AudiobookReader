@@ -9,7 +9,7 @@ Cloudflare Worker with two responsibilities, routed by path:
   localStorage and calls `POST /auth/token` to mint fresh Google access
   tokens. This replaces the GIS hidden-iframe silent refresh that iOS Safari
   ITP blocks, so logins survive on iPhone. See
-  [`../../docs/auth-redesign.md`](../../docs/auth-redesign.md).
+  [`../../docs/authentication.md`](../../docs/authentication.md).
 - **everything else — the R2 proxy.** The web app sends a Google OAuth access
   token as `Authorization: Bearer …` (or `?_token=`); the Worker verifies it
   against Google, checks the email against `ALLOWED_EMAILS`, and streams the

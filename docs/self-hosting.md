@@ -22,7 +22,7 @@ Sovellus tarvitsee kolme palaa:
 
 OAuth consent screenin julkaisutila, redirect URI ja client secretin
 asettaminen Workeriin on kuvattu tarkasti kohdassa
-**[auth-redesign.md → Liite A](auth-redesign.md)** (kohdat 1–4). Tee ne sieltä
+**[authentication.md → Setup](authentication.md#setup-oman-kopion-pystytys)** (kohdat 1–4). Tee ne sieltä
 — niitä ei toisteta tässä, jotta ohje pysyy ajan tasalla yhdessä paikassa.
 
 ## 2. Cloudflare Worker
@@ -48,7 +48,7 @@ GOOGLE_API_KEY:       '<oma-api-key>',                     // Google Picker
 
 `AUTH_BASE_URL`:n täytyy täsmätä Workerin osoitteeseen, ja saman osoitteen
 `/auth/callback`:n täytyy olla OAuth-clientin **Authorized redirect URI**
-(ks. auth-redesign.md Liite A, kohta 2).
+(ks. [authentication.md → redirect URI](authentication.md#2-lisää-redirect-uri)).
 
 ## 4. Hostaus
 
@@ -61,7 +61,7 @@ GOOGLE_API_KEY:       '<oma-api-key>',                     // Google Picker
 4. Jatkossa push `main`:iin julkaisee automaattisesti (~30 s).
 
 Workerin voi vastaavasti kytkeä deployaamaan Gitistä (Cloudflare Workers
-Builds, root `tools/r2-auth-worker`) — ks. auth-redesign.md Liite B.
+Builds, root `tools/r2-auth-worker`) — ks. [authentication.md → Workerin deploy](authentication.md#4-workerin-deploy).
 
 ### Paikallinen kehitys
 ```bash

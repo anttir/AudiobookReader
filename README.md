@@ -48,7 +48,7 @@ kohdassa [docs/self-hosting.md](docs/self-hosting.md).
 |---|---|
 | [docs/usage.md](docs/usage.md) | Tuetut tiedostomuodot, kirjojen järjestely, näppäin- ja eleohjaus, vianmääritys |
 | [docs/architecture.md](docs/architecture.md) | Tallennuslähteet, provider-rajapinta, miten osat liittyvät yhteen |
-| [docs/auth-redesign.md](docs/auth-redesign.md) | Kirjautumisen ja tietoturvan malli (OAuth Authorization Code -flow + Cloudflare Worker) ja setup-runbook |
+| [docs/authentication.md](docs/authentication.md) | Kirjautumisen ja tietoturvan malli (OAuth Authorization Code -flow + Cloudflare Worker) ja setup-runbook |
 | [docs/self-hosting.md](docs/self-hosting.md) | Oman kopion pystytys: Google Cloud, OAuth-client, Worker, hostaus |
 | [docs/uploading-books.md](docs/uploading-books.md) | R2-bucketin rakenne, `index.json`-manifesti, HLS-vaatimukset, upload |
 
@@ -59,7 +59,7 @@ Kirjautuminen pyytää sisäänkirjautuessa vain ei-arkaluonteiset
 (`drive.readonly`, `drive.appdata`) pyydetään vasta kun käyttäjä avaa Driven.
 Refresh tokenia ei säilytetä selaimessa — sen pitää [Cloudflare
 Worker](tools/r2-auth-worker), joka antaa selaimelle salatun session-tokenin.
-Koko malli ja perustelut: [docs/auth-redesign.md](docs/auth-redesign.md).
+Koko malli ja perustelut: [docs/authentication.md](docs/authentication.md).
 
 ## Teknologiat
 

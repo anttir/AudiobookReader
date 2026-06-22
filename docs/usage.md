@@ -5,7 +5,7 @@
 1. Avaa sovellus ja **kirjaudu Google-tilillä** (kevyt consent: nimi + sähköposti).
 2. Oletuksena näkyy **Cloudflare R2** -kirjasto. Vaihda halutessasi
    **Google Drive** -välilehteen (kysyy Drive-luvan ensimmäisellä kerralla,
-   ks. [auth-redesign.md](auth-redesign.md)).
+   ks. [authentication.md](authentication.md)).
 3. Napauta kirjaa aloittaaksesi lukemisen tai kuuntelun. Sovellus muistaa
    missä kohtaa olit, ja näyttää "Jatka lukemista" -kortin.
 
@@ -60,7 +60,7 @@ Jos olet käyttänyt sovellusta aiemmin ja myöntänyt Drive-luvan, Google
 muistaa sen ja näyttää varoituksen. Poista oikeudet kerran:
 [myaccount.google.com/permissions](https://myaccount.google.com/permissions)
 → AudioBook Reader → poista käyttöoikeus → kirjaudu uudelleen. Sama ohje on
-sovelluksen kirjautumisnäkymässä. Tausta: [auth-redesign.md](auth-redesign.md).
+sovelluksen kirjautumisnäkymässä. Tausta: [authentication.md](authentication.md).
 
 ### R2-äänikirjat eivät näy
 R2-sisältö on auth-workerin takana ja avoinna vain allowlist-sähköposteille.
