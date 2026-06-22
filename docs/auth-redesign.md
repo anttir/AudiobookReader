@@ -1,11 +1,10 @@
-# Kirjautumisen lopullinen korjaus — suunnitelma
+# Kirjautumisen malli (OAuth Authorization Code + Worker)
 
-> Tila: **toteutettu branchissa `claude/ios-auth-audiobook-bugs-yguiks`**,
-> odottaa (a) sinun manuaaliset askeleet (Liite A, kohdat 1–4) ja (b)
-> branchin yhdistämistä `main`:iin (jolloin SPA → GitHub Pages ja Worker →
-> Cloudflare deployautuvat). Worker (`/auth/*`) ja SPA (`js/auth.js`
-> redirect + `/auth/token`) ovat valmiina. Tämä dokumentti kuvaa miten
-> kirjautumisongelma ratkaistaan lopullisesti, myös iOS Safarissa.
+> Tila: **käytössä tuotannossa** (PR:t #11–#14). Worker tarjoaa `/auth/*`
+> -endpointit ja SPA (`js/auth.js`) käyttää redirect-loginia +
+> `/auth/token`-uusintaa. Tämä dokumentti on kirjautumisen ja tietoturvan
+> kanoninen kuvaus sekä forkkaajan setup-runbook (Liite A–B). Se selittää
+> myös miksi malli ratkaisee iOS Safarin uudelleenkirjautumisongelman.
 
 ## 1. Mistä ongelma johtuu (juurisyy)
 
