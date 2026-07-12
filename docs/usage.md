@@ -41,6 +41,21 @@ kansiossa.
 R2-puolella kirjat määritellään `index.json`-manifestissa — ks.
 [uploading-books.md](uploading-books.md).
 
+## Paluu edelliseen kuuntelukohtaan
+
+Jos toistokohta hyppää yhtäkkiä kauas — esimerkiksi vahinkonapautus
+puhelimen lukitusnäytön edistymispalkkiin tai sovelluksen omaan palkkiin —
+soitin muistaa, missä olit:
+
+- Edistymispalkkiin ilmestyy **oranssi merkki** kohtaan, jossa olit ennen
+  hyppyä.
+- Palkin alle ilmestyy **"Palaa kohtaan h:mm:ss"** -painike.
+
+Napauta painiketta tai merkkiä palataksesi. Paluun jälkeen merkki näyttää
+kohdan, josta palasit — joten paluunkin voi perua. Merkki nollautuu, kun
+vaihdat tiedostoa tai kirjaa. Pienet siirtymät (alle minuutin, esim.
+30 sekunnin kelauspainikkeet) eivät aktivoi merkkiä.
+
 ## Näppäinkomennot
 
 | Tila | Näppäin | Toiminto |

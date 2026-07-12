@@ -659,6 +659,18 @@ body {
     min-width: 40px;
 }
 
+/* Wrapper that lets us overlay markers on top of the range input. */
+.progress-track {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+
+.progress-track > .progress-bar {
+    width: 100%;
+}
+
 .progress-bar {
     flex: 1;
     -webkit-appearance: none;
@@ -667,6 +679,57 @@ body {
     border-radius: 3px;
     background: var(--border-color);
     cursor: pointer;
+}
+
+/* "Where was I?" marker: shows the listening position before the last
+   big jump. Clicking it returns there (same target a tap on that spot
+   of the bar would seek to, so it never fights the slider). */
+.jump-back-marker {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1;
+}
+
+.jump-back-marker::before {
+    content: '';
+    width: 4px;
+    height: 16px;
+    border-radius: 2px;
+    background: var(--warning);
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+}
+
+.jump-back-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: -18px 0 18px;
+    padding: 6px 14px;
+    border: 1px solid var(--warning);
+    border-radius: 16px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.jump-back-btn:hover {
+    background: var(--bg-tertiary);
+}
+
+.jump-back-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: var(--warning);
+    flex-shrink: 0;
 }
 
 .progress-bar::-webkit-slider-thumb {
