@@ -17,6 +17,18 @@ const AudioPlayer = {
     _currentChapterIndex: -1,
     _bgLockAbort: null,
     _authRefreshAttempted: false,
+    // "Where was I?" jump-back state: when the playhead suddenly moves a
+    // long way (lock-screen scrub, misclick on the progress bar), we
+    // remember where it was so the user can get back with one tap.
+    _lastStableTime: null,     // playhead position tracked at timeupdate rate
+    _jumpBack: null,           // { time, at } — position before the last big jump
+    _suppressJumpDetection: false,
+    // Seeks smaller than this are treated as intentional (30 s skip
+    // buttons, arrow keys) and don't arm the jump-back marker.
+    JUMP_BACK_THRESHOLD: 60,
+    // Seeks within this window count as one scrubbing gesture: the
+    // origin of the first seek stays the place to return to.
+    JUMP_BACK_MERGE_MS: 10000,
     // hls.js CDN — pinned version. Update intentionally; do not float to @latest.
     HLS_JS_SRC: 'https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js',
 
@@ -69,6 +81,11 @@ const AudioPlayer = {
         this.audio.addEventListener('error', (e) => this.onError(e));
         this.audio.addEventListener('canplay', () => this.onCanPlay());
 
+        // Detect big playhead jumps from ANY source — in-app progress bar,
+        // chapter list, or the OS lock-screen scrubber (which seeks the
+        // element directly without going through our UI).
+        this.audio.addEventListener('seeking', () => this._onSeeking());
+
         // Background-tab resilience: when the audio element stalls (Chrome
         // throttles segment loads for hidden tabs), poke hls.js to resume
         // loading rather than waiting for the timer to catch up.
@@ -85,6 +102,10 @@ const AudioPlayer = {
         // Progress bar
         const progressBar = document.getElementById('progress-bar');
         progressBar.addEventListener('input', (e) => this.onProgressChange(e));
+
+        // Jump-back controls ("where was I before that seek?")
+        document.getElementById('jump-back-btn').addEventListener('click', () => this.returnToPreviousPosition());
+        document.getElementById('jump-back-marker').addEventListener('click', () => this.returnToPreviousPosition());
 
         // Playback speed
         document.getElementById('playback-speed').addEventListener('change', (e) => {
@@ -226,6 +247,18 @@ const AudioPlayer = {
         }
 
         this.isLoading = true;
+
+        // Jump-back state is per-track: a saved position in another file
+        // means nothing here. Kept when re-loading the same track (e.g.
+        // the auth-refresh reload path). The stable-time tracker resets
+        // always so the progress-restore seek below isn't mistaken for a
+        // user jump.
+        const sameTrack = this.currentItem
+            && this.currentItem.sourceId === item.sourceId
+            && this.currentItem.key === item.key;
+        if (!sameTrack) this._clearJumpBack();
+        this._lastStableTime = null;
+
         this.currentItem = item;
 
         // Find in playlist by stable identity
@@ -645,6 +678,8 @@ const AudioPlayer = {
         this.currentIndex = 0;
         this.playlist = [];
         this.isPlaying = false;
+        this._lastStableTime = null;
+        this._clearJumpBack();
     },
 
     /**
@@ -706,6 +741,11 @@ const AudioPlayer = {
     onTimeUpdate() {
         const current = this.audio.currentTime;
         const duration = this.audio.duration;
+
+        // Track the "stable" playhead position for jump detection. Not
+        // updated mid-seek, so when `seeking` fires this still holds the
+        // position the user was actually listening at.
+        if (!this.audio.seeking) this._lastStableTime = current;
 
         if (!isNaN(duration)) {
             // Update progress bar
@@ -776,6 +816,80 @@ const AudioPlayer = {
     },
 
     /**
+     * `seeking` fired on the audio element — from the in-app progress bar,
+     * the chapter list, or the OS lock-screen scrubber. If the playhead
+     * moved far from where the user was listening, arm the jump-back
+     * marker so they can get back with one tap.
+     */
+    _onSeeking() {
+        if (this._suppressJumpDetection) {
+            this._suppressJumpDetection = false;
+            return;
+        }
+        const from = this._lastStableTime;
+        const to = this.audio.currentTime;
+        if (from == null || isNaN(to)) return;
+        if (Math.abs(to - from) < this.JUMP_BACK_THRESHOLD) return;
+
+        const now = Date.now();
+        if (this._jumpBack && (now - this._jumpBack.at) < this.JUMP_BACK_MERGE_MS) {
+            // Same scrubbing gesture (drag, repeated taps) — keep the
+            // original origin, just extend the merge window.
+            this._jumpBack.at = now;
+        } else {
+            this._jumpBack = { time: from, at: now };
+        }
+        this._renderJumpBack();
+    },
+
+    /**
+     * Seek back to the position saved before the last big jump. The
+     * position we leave becomes the new marker, so an unwanted return
+     * can itself be undone.
+     */
+    returnToPreviousPosition() {
+        const jb = this._jumpBack;
+        if (!jb || !this.audio.duration || isNaN(this.audio.duration)) return;
+        const from = this.audio.currentTime;
+        this._suppressJumpDetection = true;
+        this.audio.currentTime = Math.max(0, Math.min(jb.time, this.audio.duration));
+        this._lastStableTime = this.audio.currentTime;
+        // at: 0 keeps the swapped marker out of the merge window — a new
+        // seek right after a return should record a fresh origin, not
+        // extend this one.
+        this._jumpBack = { time: from, at: 0 };
+        this._renderJumpBack();
+        // Refresh the chapter label immediately (matters when paused).
+        this._currentChapterIndex = -1;
+        this._updateCurrentChapter(this.audio.currentTime);
+    },
+
+    _clearJumpBack() {
+        this._jumpBack = null;
+        this._renderJumpBack();
+    },
+
+    /**
+     * Show/position the marker on the progress bar and the "Palaa
+     * kohtaan" button, or hide both when there is nothing to return to.
+     */
+    _renderJumpBack() {
+        const marker = document.getElementById('jump-back-marker');
+        const btn = document.getElementById('jump-back-btn');
+        if (!marker || !btn) return;
+        const duration = this.audio?.duration;
+        if (!this._jumpBack || !duration || isNaN(duration)) {
+            marker.classList.add('hidden');
+            btn.classList.add('hidden');
+            return;
+        }
+        marker.style.left = ((this._jumpBack.time / duration) * 100) + '%';
+        marker.classList.remove('hidden');
+        document.getElementById('jump-back-time').textContent = this.formatTime(this._jumpBack.time);
+        btn.classList.remove('hidden');
+    },
+
+    /**
      * Seek to a chapter (or any { start } object). Starts playback if it
      * was paused, queues the seek if metadata isn't loaded yet.
      */
@@ -805,6 +919,10 @@ const AudioPlayer = {
         const duration = this.audio.duration;
         document.getElementById('duration').textContent = this.formatTime(duration);
         document.getElementById('progress-bar').max = 100;
+
+        // Marker position depends on duration, which we may not have had
+        // when the jump was recorded.
+        this._renderJumpBack();
 
         // Restore playback speed
         const settings = Storage.getSettings();
@@ -998,5 +1116,7 @@ const AudioPlayer = {
         this.playlist = [];
         this.currentIndex = 0;
         this.currentItem = null;
+        this._lastStableTime = null;
+        this._clearJumpBack();
     }
 };

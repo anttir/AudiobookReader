@@ -2,6 +2,14 @@
 
 Merkittävät muutokset, uusin ensin. Tarkka historia: git- ja PR-loki.
 
+## 2026-07
+
+- **Paluu edelliseen kuuntelukohtaan**: kun toistokohta hyppää yhtäkkiä
+  kauas (esim. vahinkonapautus lukitusnäytön edistymispalkkiin), soittimen
+  edistymispalkkiin ilmestyy oranssi merkki edelliseen kohtaan ja sen alle
+  "Palaa kohtaan" -painike. Napautus palauttaa kuuntelun siihen, missä
+  olit — ja paluun voi myös perua. Ks. [docs/usage.md](docs/usage.md).
+
 ## 2026-06
 
 - **Kirjautuminen uusittu** OAuth Authorization Code + PKCE -malliin, jossa
