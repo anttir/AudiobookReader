@@ -27,6 +27,8 @@ välilehtensä, ja sen lisälupa kysytään vasta jos avaat sen.
 - **Edistymisen tallennus** — muistaa missä kohtaa olit (lähdekohtaisilla
   avaimilla); "Jatka lukemista" -kortti. Valinnainen laitteiden välinen
   synkronointi Google Driven kautta.
+- **Arkisto** — R2-kirjat voi arkistoida (ylläpitäjä); kirjastossa
+  *Aktiiviset | Arkistoidut* -valinta. Ks. [docs/usage.md](docs/usage.md#arkisto).
 - **Teemat** (tumma/vaalea/seepia) ja **PWA-asennus**.
 
 ## Pikakäyttö
@@ -59,6 +61,8 @@ Kirjautuminen pyytää sisäänkirjautuessa vain ei-arkaluonteiset
 (`drive.readonly`, `drive.appdata`) pyydetään vasta kun käyttäjä avaa Driven.
 Refresh tokenia ei säilytetä selaimessa — sen pitää [Cloudflare
 Worker](tools/r2-auth-worker), joka antaa selaimelle salatun session-tokenin.
+Sivujen Content-Security-Policy sallii yhteydet vain omaan originiin, Workeriin,
+käytettyihin Google-endpointeihin ja versioon lukittuihin CDN-kirjastoihin.
 Koko malli ja perustelut: [docs/authentication.md](docs/authentication.md).
 
 ## Teknologiat

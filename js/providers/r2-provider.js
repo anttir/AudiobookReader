@@ -17,7 +17,9 @@
  *         "playlist": "stoneheart/playlist.m3u8",         // required if format=hls
  *         "audioFile":"stoneheart/audiobook.m4a",         // required if format=native
  *         "cover":    "stoneheart/cover.jpg",             // optional
- *         "duration": 36854.2                             // optional, seconds
+ *         "duration": 36854.2,                            // optional, seconds
+ *         "archived": true,                               // optional, absent = false
+ *         "audioAvailable": false                         // optional, absent = true (audio purged)
  *       }
  *     ]
  *   }
@@ -172,13 +174,35 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
         return fetch(url, buildInit());
     },
 
+    /**
+     * Readable (Finnish) message for a network-level fetch failure. The
+     * Content-Security-Policy in index.html only allows
+     * CONFIG.R2_DEFAULT_BASE_URL, so a custom base URL saved in Settings
+     * always fails here with an opaque TypeError — explain why instead.
+     */
+    _networkErrorMessage(err) {
+        const hostOf = (u) => { try { return new URL(u).host; } catch { return ''; } };
+        const host = hostOf(this.getConfig()?.baseUrl);
+        const defaultHost = hostOf(typeof CONFIG !== 'undefined' ? CONFIG.R2_DEFAULT_BASE_URL : '');
+        if (host && defaultHost && host !== defaultHost) {
+            return `R2-osoitteeseen ${host} ei saa yhteyttä: sovelluksen tietoturvakäytäntö (CSP) `
+                + `sallii vain oletusosoitteen ${defaultHost}. Palauta oletus-URL asetuksista (Tyhjennä).`;
+        }
+        return `R2-palvelimeen ei saatu yhteyttä (${err?.message || err})`;
+    },
+
     // --- manifest ----------------------------------------------------------
 
     async _fetchManifest() {
         const url = this._absUrl(this.R2_INDEX_PATH);
         // cache: 'no-cache' so book additions surface without forcing the user
         // to hard-refresh; the file is small.
-        const resp = await this._fetchWithAuthRetry(url, { cache: 'no-cache' });
+        let resp;
+        try {
+            resp = await this._fetchWithAuthRetry(url, { cache: 'no-cache' });
+        } catch (e) {
+            throw new Error(this._networkErrorMessage(e));
+        }
         if (!resp.ok) {
             throw new Error(`R2 manifest fetch failed (${resp.status}). URL: ${url}`);
         }
@@ -236,6 +260,12 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
             author: entry.author || null,
             narrator: entry.narrator || null,
             chapters: this._normaliseChapters(entry.chapters),
+            // Archive state (see docs/uploading-books.md). `audioAvailable`
+            // is false only after the offline purge tool deleted the audio
+            // objects — the entry + cover stay, but the book can't play.
+            archived: entry.archived === true,
+            archivedAt: typeof entry.archivedAt === 'string' ? entry.archivedAt : undefined,
+            audioAvailable: entry.audioAvailable !== false,
             // Manifest index — used by the library renderer to sort by
             // "lisäysjärjestys". Lower = added earlier.
             _addedAt: typeof index === 'number' ? index : undefined,
@@ -285,6 +315,53 @@ const R2Provider = Object.assign(Object.create(ProviderBase), {
 
     async listFolders(_parentId) {
         return [];                          // R2 has no nested folder UI
+    },
+
+    // --- archive -----------------------------------------------------------
+
+    R2_ARCHIVE_PATH: '_api/archive',
+
+    /**
+     * Archive / unarchive a book via the auth-worker's admin endpoint
+     * (`POST <baseUrl>/_api/archive`). Resolves to the updated manifest
+     * entry; throws an Error with a Finnish, user-presentable message on
+     * failure. Only works against the r2-auth-worker — a plain public R2
+     * URL has no write API.
+     */
+    async setArchived(bookId, archived) {
+        if (this._isPublicR2()) {
+            throw new Error('Arkistointi vaatii auth-workerin (julkinen R2-URL ei tue sitä)');
+        }
+        const url = this._absUrl(this.R2_ARCHIVE_PATH);
+        let resp;
+        try {
+            // _fetchWithAuthRetry adds `Authorization: Bearer <Google access
+            // token>` (the worker accepts no ?_token= here) and retries once
+            // after Auth.refreshToken() on 401/403 — the body is a string, so
+            // it's safe to resend, and the write is idempotent.
+            resp = await this._fetchWithAuthRetry(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: bookId, archived: !!archived }),
+            });
+        } catch (e) {
+            throw new Error(`Arkistointi epäonnistui: verkkovirhe (${e.message || e})`);
+        }
+        if (!resp.ok) {
+            const body = await resp.json().catch(() => null);
+            if (resp.status === 409 && body?.error === 'audio_purged') {
+                throw new Error('Kirjan äänet on poistettu R2:sta — sitä ei voi palauttaa aktiivisiin');
+            }
+            const messages = {
+                401: 'Kirjautuminen vanhentunut — kirjaudu uudelleen',
+                403: 'Vain ylläpitäjä voi arkistoida kirjoja',
+                404: 'Kirjaa ei löytynyt manifestista',
+                409: 'Manifesti muuttui samanaikaisesti — yritä uudelleen',
+            };
+            throw new Error(messages[resp.status] || `Arkistointi epäonnistui (${resp.status})`);
+        }
+        const data = await resp.json().catch(() => null);
+        return data?.book || null;
     },
 
     // --- playback ----------------------------------------------------------

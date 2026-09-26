@@ -56,6 +56,22 @@ kohdan, josta palasit — joten paluunkin voi perua. Merkki nollautuu, kun
 vaihdat tiedostoa tai kirjaa. Pienet siirtymät (alle minuutin, esim.
 30 sekunnin kelauspainikkeet) eivät aktivoi merkkiä.
 
+## Arkisto
+
+R2-kirjaston työkalupalkissa on valinta **Aktiiviset | Arkistoidut**
+(näkyy vain, kun kirjastossa on R2-kirjoja; valinta muistetaan).
+Arkistoidut kirjat eivät näy aktiivisessa listassa eivätkä "Jatka
+lukemista" -kortissa, mutta ne voi avata Arkistoidut-näkymästä.
+
+- **Arkistoi / Palauta arkistosta** — ylläpitäjät (`CONFIG.ARCHIVE_ADMIN_EMAILS`,
+  Workerin `ADMIN_EMAILS`) näkevät painikkeen kirjakortissa, listarivillä
+  ja soittimen yläpalkissa. Onnistumisilmoituksessa on **Kumoa**.
+- **"Äänet poistettu"** -merkki: kirjan äänitiedostot on poistettu R2:sta
+  (purge). Kirjaa ei voi enää kuunnella eikä palauttaa aktiivisiin.
+
+Tekninen spec (manifestin kentät, Workerin endpoint):
+[uploading-books.md](uploading-books.md#archiving--purging).
+
 ## Näppäinkomennot
 
 | Tila | Näppäin | Toiminto |

@@ -46,6 +46,11 @@ R2_DEFAULT_BASE_URL:  'https://<oma-worker>.workers.dev',  // R2-proxy täällä
 GOOGLE_API_KEY:       '<oma-api-key>',                     // Google Picker
 ```
 
+Vaihda Workerin osoite myös `index.html`:n `Content-Security-Policy`-metaan
+(`img-src`, `media-src`, `connect-src`) — muuten selain estää kaikki
+Worker-kutsut. Arkistoinnin ylläpitäjät: `CONFIG.ARCHIVE_ADMIN_EMAILS` +
+Workerin `ADMIN_EMAILS`.
+
 `AUTH_BASE_URL`:n täytyy täsmätä Workerin osoitteeseen, ja saman osoitteen
 `/auth/callback`:n täytyy olla OAuth-clientin **Authorized redirect URI**
 (ks. [authentication.md → redirect URI](authentication.md#2-lisää-redirect-uri)).

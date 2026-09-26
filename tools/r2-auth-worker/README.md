@@ -10,6 +10,8 @@ Cloudflare Worker with two responsibilities, routed by path:
   tokens. This replaces the GIS hidden-iframe silent refresh that iOS Safari
   ITP blocks, so logins survive on iPhone. See
   [`../../docs/authentication.md`](../../docs/authentication.md).
+- **`POST /_api/archive` — admin-only write** (see
+  [Archive endpoint](#archive-endpoint-only-write)).
 - **everything else — the R2 proxy.** The web app sends a Google OAuth access
   token as `Authorization: Bearer …` (or `?_token=`); the Worker verifies it
   against Google, checks the email against `ALLOWED_EMAILS`, and streams the
@@ -45,6 +47,27 @@ The Worker is bound directly to the R2 bucket (`BUCKET` binding in
 `wrangler.toml`). No S3 access keys, no token in the Worker. The S3
 keys in `tools/upload-to-r2/.env` are still needed for uploading
 content; nothing here.
+
+## Archive endpoint (only write)
+
+`POST /_api/archive` with `{ "id": "<book-id>", "archived": true|false }`
+sets / clears `archived` + `archivedAt` on that `index.json` entry.
+Caller must be in `ALLOWED_EMAILS` **and** `ADMIN_EMAILS` (403
+otherwise). The manifest is rewritten with an etag precondition (3
+retries, then 409), preserving its HTTP metadata. GET/HEAD on that path
+are ordinary R2 reads. Spec:
+[`docs/uploading-books.md`](../../docs/uploading-books.md#archiving--purging).
+
+The token is the same Google access token the R2 reads use (minted by the
+SPA via `/auth/token`, verified via tokeninfo + cache) — never the `/auth`
+session token. Unlike GET/HEAD reads, this endpoint accepts it **only** via
+`Authorization: Bearer <token>` — no `?_token=` query fallback (401
+`bearer_required` if one is supplied instead) — and requires
+`Content-Type: application/json` (415 otherwise). Both force a CORS
+preflight, which is what actually stops the endpoint from being hit as
+a cross-site "simple request". Unarchiving (`archived: false`) a book
+whose audio was purged (`audioAvailable: false`) is refused with 409
+`audio_purged` and never writes.
 
 ## Token cache
 

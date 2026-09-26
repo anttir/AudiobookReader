@@ -57,8 +57,10 @@ bucket base URL is either:
 - `https://audiobookreader-r2.<account>.workers.dev` — the auth-worker
   proxy, which validates a Google access token before returning bytes
 
-Uploaders do not interact with the worker. The worker only sits in front
-of *reads*; writes always go via the S3 API.
+Uploaders do not interact with the worker. The worker sits in front of
+*reads*; content writes always go via the S3 API. Its only write is the
+admin-only archive flag on `index.json` (see
+[Archiving & purging](#archiving--purging)).
 
 ---
 
@@ -148,11 +150,21 @@ A single JSON file at the bucket root. The web app fetches it with
       // any other keys are ignored by the app today but kept as you write
       // them — feel free to stash author, narrator, ISBN, etc.
       "author":    "Hannu Rajaniemi",
-      "narrator":  "Anu Hynninen"
+      "narrator":  "Anu Hynninen",
+
+      // Archive / purge state — all optional, see "Archiving & purging".
+      "archived":       true,                    // absent ⇒ false
+      "archivedAt":     "2026-09-26T10:00:00Z",  // ISO 8601 UTC, only while archived
+      "audioAvailable": false,                   // absent ⇒ true; false = audio purged
+      "purgedAt":       "2026-10-01T08:00:00Z"   // ISO 8601 UTC, set by the purge tool
     }
   ]
 }
 ```
+
+Uploaders re-writing an existing entry must **keep** `archived` /
+`archivedAt`, and on a successful full audio upload **drop**
+`audioAvailable` and `purgedAt` (the audio is back).
 
 ### Update protocol
 
@@ -160,11 +172,25 @@ The manifest is mutable. Adding / removing books = upload a new
 `index.json` that includes the change. There is **no append API** — you
 fetch, edit, then put the whole file back.
 
-Race conditions: R2 does not currently expose conditional writes on
-`index.json`. If two uploaders update the manifest simultaneously, the
-last writer wins. In practice book uploads are interactive so this is
-fine; if you need to be safer, store a `version` integer and skip the
-write if it changed under you (read again, retry).
+Race conditions: the reference uploader (`upload-to-r2.py`) does a
+conditional read-modify-write — fetch with the object's ETag, put with
+`IfMatch` (or `IfNoneMatch: '*'` if `index.json` doesn't exist yet),
+retry the whole cycle on HTTP 412, up to 3 attempts, then fail loudly.
+This is the same approach the sibling Bookbeat project's
+`grab_book.py` uses. The worker's archive endpoint does the same
+(`onlyIf.etagMatches`, 3 retries, then 409), so the two never clobber
+each other. A custom uploader that instead does a plain
+read-modify-write can still lose a concurrent write — last writer
+wins — so new uploaders should follow the conditional-write pattern
+too.
+
+Field ownership on re-upload: the reference uploader **merges** its
+new entry onto whatever was already there instead of replacing it
+wholesale, so a re-upload that doesn't pass `--chapters` or `--cover`
+this time doesn't erase chapters/cover set by an earlier run (same for
+`author`, `narrator`, `isbn`, `language`, `archived`, `archivedAt`).
+`audioAvailable` / `purgedAt` are always dropped on a successful
+upload, since a full audio push means the audio is back.
 
 ### Validation
 
@@ -456,6 +482,55 @@ migration.
 # 2. Edit index.json: filter out the entry with that id
 # 3. Upload index.json
 ```
+
+### Archiving & purging
+
+Two separate steps, so a book can be hidden without losing anything:
+
+1. **Archive** (reversible, from the app — UI described in
+   [usage.md](usage.md#arkisto)). The app's archive button calls the worker:
+
+   ```
+   POST <worker>/_api/archive
+   Authorization: Bearer <google access token>
+   Content-Type: application/json
+
+   { "id": "<book-id>", "archived": true }     // false = unarchive
+   ```
+
+   - The token is the same Google access token R2 reads use (the app
+     mints it via the Worker's `/auth/token`, see
+     [authentication.md](authentication.md)); the Worker verifies it
+     against Google tokeninfo. The `/auth` session token is not accepted.
+   - The token must be sent as `Authorization: Bearer ...` — a
+     `?_token=` query param (the form used for `<img>`/`<audio>` reads)
+     is rejected with 401 `bearer_required`. `Content-Type` must be
+     `application/json` or 415. Both requirements force a CORS
+     preflight, which is the actual guard against the endpoint being
+     hit as a cross-site "simple request".
+   - Requires the email in `ADMIN_EMAILS` (wrangler.toml) → else 403;
+     no/invalid token → 401. Bad body → 400, unknown id → 404, lost
+     etag race 3× → 409.
+   - Unarchiving (`archived: false`) a book whose audio was purged
+     (`audioAvailable: false`, see step 2) → 409 `audio_purged`,
+     without writing. Archiving — or re-archiving — a purged book is
+     still allowed.
+   - Sets `archived: true` + `archivedAt`, or deletes both. Returns
+     `{ ok: true, book: <entry> }`.
+   - The UI list of admins is `CONFIG.ARCHIVE_ADMIN_EMAILS` in
+     `js/config.js` — cosmetic only; the worker is the gate.
+   - Any other server-side failure returns a generic 500
+     `{ error: "internal_error" }` — the underlying message is only
+     logged (`console.error`) on the Worker, never sent to the client.
+
+2. **Purge** (irreversible, offline). `grab_book.py --purge` (Bookbeat
+   repo) deletes a book's audio objects (playlist + segments / audio
+   file) via the S3 API, keeps the cover and entry, and sets
+   `audioAvailable: false` + `purgedAt`. Only this tool sets those two
+   keys. The app shows such books with an "Äänet poistettu" badge,
+   refuses to play them, and hides their unarchive button — and the
+   worker refuses an unarchive call for them too (see step 1). A full
+   audio re-upload removes both keys again.
 
 ### Listing books from a tool
 

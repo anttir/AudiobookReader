@@ -119,7 +119,10 @@ const PDFViewer = {
             const arrayBuffer = await blob.arrayBuffer();
 
             // Load with PDF.js
-            const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+            // isEvalSupported: false — the CSP (index.html) has no
+            // 'unsafe-eval'; without this pdf.js probes `new Function`
+            // (caught, but logs a CSP violation) before falling back.
+            const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, isEvalSupported: false });
             this.pdfDoc = await loadingTask.promise;
             this.totalPages = this.pdfDoc.numPages;
 

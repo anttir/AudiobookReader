@@ -1658,6 +1658,132 @@ body {
     fill: currentColor;
 }
 
+/* Archive switch (Aktiiviset | Arkistoidut) — same segmented look as the
+   view toggle, but with text labels. */
+.archive-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 12px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    transition: background var(--transition), color var(--transition);
+}
+.archive-toggle-btn + .archive-toggle-btn {
+    border-left: 1px solid var(--border-color);
+}
+.archive-toggle-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+.archive-toggle-btn.active {
+    background: var(--accent);
+    color: white;
+}
+.archive-count {
+    min-width: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 0.7rem;
+    line-height: 18px;
+    text-align: center;
+}
+.archive-toggle-btn.active .archive-count {
+    background: rgba(255, 255, 255, 0.25);
+    color: white;
+}
+
+/* Per-book archive / unarchive button. On cards it floats in the cover's
+   top-left corner; on rows it's the last flex item. */
+.archive-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-secondary);
+    transition: background var(--transition), color var(--transition), opacity var(--transition);
+}
+.archive-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+.archive-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+.archive-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+}
+.book-cover .archive-btn {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    background: rgba(0, 0, 0, 0.55);
+    color: white;
+}
+.book-cover .archive-btn svg {
+    width: 18px;
+    height: 18px;
+    opacity: 1;
+}
+.book-cover .archive-btn:hover {
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+}
+
+/* "Äänet poistettu" — audio purged from R2, entry kept for metadata. */
+.purged-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 4px 8px;
+    background: var(--danger);
+    border-radius: 4px;
+    font-size: 0.7rem;
+    color: white;
+}
+.purged-badge.purged-badge-inline {
+    position: static;
+    display: inline-block;
+    padding: 1px 6px;
+    margin-left: 4px;
+}
+.book-card.audio-purged .cover-img {
+    filter: grayscale(0.8);
+    opacity: 0.7;
+}
+
+/* Inline action inside a toast (e.g. "Kumoa"). */
+.toast-action {
+    margin-left: 8px;
+    padding: 4px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--accent);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.toast-action:hover {
+    background: var(--bg-tertiary);
+}
+
 /* Row thumbnail — small 2:3 cover box used by file-item rows and book-rows
    in Details view. Mirrors .book-cover layering. */
 .row-cover {

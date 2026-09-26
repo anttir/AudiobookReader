@@ -26,6 +26,17 @@ const DEFAULT_LIBRARY_SORT = 'recent-desc';
 const LIBRARY_VIEWS = ['icons', 'details'];
 const DEFAULT_LIBRARY_VIEW = 'icons';
 
+/**
+ * Library archive filter. 'active' hides archived R2 books; 'archived'
+ * shows only them (non-R2 items have no archive state and only appear in
+ * 'active'). Persisted in Storage settings as `libraryArchiveView`.
+ */
+const ARCHIVE_VIEWS = ['active', 'archived'];
+const DEFAULT_ARCHIVE_VIEW = 'active';
+
+const ICON_ARCHIVE = '<svg viewBox="0 0 24 24"><path d="M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z"/></svg>';
+const ICON_UNARCHIVE = '<svg viewBox="0 0 24 24"><path d="M20.55 5.22l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.15.55L3.46 5.22C3.17 5.57 3 6.01 3 6.5V19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.49-.17-.93-.45-1.28zM12 9.5l5.5 5.5H14v2h-4v-2H6.5L12 9.5zM5.12 5l.82-1h12l.93 1H5.12z"/></svg>';
+
 const App = {
     currentScreen: 'login',
     currentFolder: null,
@@ -34,6 +45,7 @@ const App = {
     currentBook: null,      // Current book being read (can be multi-part)
     currentPartIndex: 0,    // Current part index in multi-part book
     currentMode: 'read',    // 'read' or 'listen'
+    _archivePending: new Set(),  // book ids with an archive request in flight
 
     /**
      * Initialize the application
@@ -186,6 +198,13 @@ const App = {
             this.currentBook = null;
             this.showScreen('library');
             this.hidePartsButton();
+            this._updateReaderArchiveButton();
+        });
+
+        // Archive / unarchive the open R2 book (admin only; hidden otherwise)
+        document.getElementById('reader-archive-btn')?.addEventListener('click', () => {
+            const book = this.currentBook;
+            if (book) this.setBookArchived(book.id, !book.archived);
         });
 
         document.getElementById('toggle-mode').addEventListener('click', () => {
@@ -533,12 +552,13 @@ const App = {
     renderLibrary() {
         const content = document.getElementById('library-content');
 
-        const hasBooks = this.library?.books?.length > 0;
-        const hasStandaloneEbooks = this.library?.standaloneFiles?.ebooks?.length > 0;
-        const hasStandaloneAudio = this.library?.standaloneFiles?.audio?.length > 0;
-        const hasFolders = this.files?.folders?.length > 0;
+        const allBooks = this.library?.books || [];
+        const hasAnything = allBooks.length > 0
+            || this.library?.standaloneFiles?.ebooks?.length > 0
+            || this.library?.standaloneFiles?.audio?.length > 0
+            || this.files?.folders?.length > 0;
 
-        if (!hasBooks && !hasStandaloneEbooks && !hasStandaloneAudio && !hasFolders) {
+        if (!hasAnything) {
             content.innerHTML = `
                 <div class="empty-state">
                     <svg viewBox="0 0 100 100" class="empty-icon">
@@ -552,28 +572,57 @@ const App = {
             return;
         }
 
+        // Archive filter — only meaningful when the library has R2 books;
+        // otherwise everything is "active" and the switch is hidden.
+        const showArchiveToggle = allBooks.some(b => b.sourceId === 'r2');
+        const archiveView = showArchiveToggle ? this._getLibraryArchiveView() : 'active';
+        const inArchive = archiveView === 'archived';
+        const archivedCount = allBooks.filter(b => this._isArchived(b)).length;
+        const visibleBooks = allBooks.filter(b => this._isArchived(b) === inArchive);
+
+        // Standalone files and folders have no archive state → active only.
+        const hasBooks = visibleBooks.length > 0;
+        const hasStandaloneEbooks = !inArchive && this.library?.standaloneFiles?.ebooks?.length > 0;
+        const hasStandaloneAudio = !inArchive && this.library?.standaloneFiles?.audio?.length > 0;
+        const hasFolders = !inArchive && this.files?.folders?.length > 0;
+
         const sortValue = this._getLibrarySort();
         const view = this._getLibraryView();
         const hasSortable = hasBooks || hasStandaloneEbooks || hasStandaloneAudio;
         const gridClass = view === 'icons' ? 'book-grid' : 'file-list';
         let html = '';
 
-        // Toolbar (sort + view toggle) — only when there's something sortable.
-        // The "Jatka lukemista" card and "Kansiot" section are not affected
-        // by sort or view, but the view toggle still applies to whichever
-        // sections render.
-        html += this._renderLibraryToolbar({ sortValue, view, showSort: hasSortable });
+        // Toolbar (sort + archive switch + view toggle). Sort only shows
+        // when there's something sortable. The "Jatka lukemista" card and
+        // "Kansiot" section are not affected by sort or view, but the view
+        // toggle still applies to whichever sections render.
+        html += this._renderLibraryToolbar({
+            sortValue, view, showSort: hasSortable,
+            showArchiveToggle, archiveView, archivedCount,
+        });
 
-        // Show continue reading if available
-        const lastRead = this.getLastReadBook();
-        if (lastRead) {
+        // Show continue reading if available — active view only, and not
+        // for a book that has since been archived / purged.
+        const lastRead = inArchive ? null : this.getLastReadBook();
+        if (lastRead && !this._isArchived(lastRead.book) && lastRead.book?.audioAvailable !== false) {
             html += this.renderContinueReading(lastRead);
+        }
+
+        // Filtered view has nothing to show (e.g. empty archive).
+        if (!hasBooks && !hasStandaloneEbooks && !hasStandaloneAudio && !hasFolders) {
+            html += `
+                <div class="empty-state">
+                    <p>${inArchive
+                        ? 'Ei arkistoituja kirjoja'
+                        : 'Kaikki kirjat on arkistoitu — ne löytyvät Arkistoidut-näkymästä'}</p>
+                </div>
+            `;
         }
 
         // Books (multi-part or from subfolders)
         if (hasBooks) {
-            const books = this._sortLibraryItems(this.library.books, sortValue);
-            html += `<div class="library-section"><h3>Kirjat</h3><div class="${gridClass}">`;
+            const books = this._sortLibraryItems(visibleBooks, sortValue);
+            html += `<div class="library-section"><h3>${inArchive ? 'Arkistoidut kirjat' : 'Kirjat'}</h3><div class="${gridClass}">`;
             books.forEach(book => {
                 html += view === 'icons' ? this.renderBookCard(book) : this.renderBookRow(book);
             });
@@ -637,6 +686,9 @@ const App = {
         content.querySelectorAll('.view-toggle-btn').forEach(btn => {
             btn.addEventListener('click', () => this._setLibraryView(btn.dataset.view));
         });
+        content.querySelectorAll('.archive-toggle-btn').forEach(btn => {
+            btn.addEventListener('click', () => this._setLibraryArchiveView(btn.dataset.archiveView));
+        });
 
         // Item click handlers + lazy cover loader.
         this.setupLibraryClickHandlers(content);
@@ -654,12 +706,13 @@ const App = {
     },
 
     /**
-     * Build the library toolbar: sort dropdown on the left, view toggle
-     * (Icons / Details) on the right. When there's nothing sortable we
-     * still render the view toggle on its own so the user can switch
-     * modes from any non-empty library state.
+     * Build the library toolbar: sort dropdown on the left, archive switch
+     * (Aktiiviset / Arkistoidut, R2 only) and view toggle (Icons / Details)
+     * on the right. When there's nothing sortable we still render the
+     * toggles on their own so the user can switch modes / leave an empty
+     * archive view.
      */
-    _renderLibraryToolbar({ sortValue, view, showSort }) {
+    _renderLibraryToolbar({ sortValue, view, showSort, showArchiveToggle, archiveView, archivedCount }) {
         const sortPart = showSort ? (() => {
             const options = SORT_OPTIONS.map(opt => {
                 const selected = opt.value === sortValue ? ' selected' : '';
@@ -682,7 +735,126 @@ const App = {
             </div>
         `;
 
-        return `<div class="library-toolbar">${sortPart}<div class="library-toolbar-spacer"></div>${toggle}</div>`;
+        const archiveToggle = showArchiveToggle ? `
+            <div class="view-toggle archive-toggle" role="group" aria-label="Arkisto">
+                <button type="button" class="archive-toggle-btn ${archiveView === 'active' ? 'active' : ''}" data-archive-view="active">Aktiiviset</button>
+                <button type="button" class="archive-toggle-btn ${archiveView === 'archived' ? 'active' : ''}" data-archive-view="archived">
+                    Arkistoidut${archivedCount > 0 ? ` <span class="archive-count">${archivedCount}</span>` : ''}
+                </button>
+            </div>
+        ` : '';
+
+        return `<div class="library-toolbar">${sortPart}<div class="library-toolbar-spacer"></div>${archiveToggle}${toggle}</div>`;
+    },
+
+    /** Read persisted archive filter, falling back to default for unknown values. */
+    _getLibraryArchiveView() {
+        const v = Storage.getSettings().libraryArchiveView;
+        return ARCHIVE_VIEWS.includes(v) ? v : DEFAULT_ARCHIVE_VIEW;
+    },
+
+    /** Set archive filter and re-render. */
+    _setLibraryArchiveView(archiveView) {
+        if (!ARCHIVE_VIEWS.includes(archiveView)) return;
+        if (this._getLibraryArchiveView() === archiveView) return;
+        Storage.setSettings({ libraryArchiveView: archiveView });
+        this.renderLibrary();
+    },
+
+    /** True for R2 books flagged `archived` in the manifest. */
+    _isArchived(book) {
+        return !!book && book.sourceId === 'r2' && book.archived === true;
+    },
+
+    /** Signed-in user is in CONFIG.ARCHIVE_ADMIN_EMAILS. */
+    _isArchiveAdmin() {
+        const email = (typeof Auth !== 'undefined' && Auth.getUser?.()?.email) || '';
+        if (!email) return false;
+        return (CONFIG.ARCHIVE_ADMIN_EMAILS || [])
+            .some(e => e.toLowerCase() === email.toLowerCase());
+    },
+
+    /**
+     * Whether to render the archive / unarchive button for a book: R2 books
+     * only, admins only. A purged book (audio deleted) can't be unarchived —
+     * it would sit unplayable in the active list.
+     */
+    _canToggleArchive(book) {
+        if (!book || book.sourceId !== 'r2') return false;
+        if (!this._isArchiveAdmin()) return false;
+        return !(book.archived && book.audioAvailable === false);
+    },
+
+    /** Archive / unarchive button markup for a card or row (empty if not allowed). */
+    _renderArchiveButton(book) {
+        if (!this._canToggleArchive(book)) return '';
+        const label = book.archived ? 'Palauta arkistosta' : 'Arkistoi';
+        const pending = this._archivePending.has(book.id);
+        return `
+            <button type="button" class="archive-btn" data-archive-id="${book.id}"
+                    title="${label}" aria-label="${label}"${pending ? ' disabled' : ''}>
+                ${book.archived ? ICON_UNARCHIVE : ICON_ARCHIVE}
+            </button>
+        `;
+    },
+
+    /**
+     * Archive / unarchive an R2 book. Optimistic: flips local state and
+     * re-renders immediately, then calls the worker; on failure reverts and
+     * shows the error. Success toast offers a one-shot undo.
+     */
+    async setBookArchived(bookId, archived, { undoable = true } = {}) {
+        const book = (this.library?.books || []).find(b => b.id === bookId && b.sourceId === 'r2');
+        if (!book || this._archivePending.has(bookId)) return;
+        if (!!book.archived === archived) return;
+
+        const prev = { archived: book.archived, archivedAt: book.archivedAt };
+        book.archived = archived;
+        book.archivedAt = archived ? new Date().toISOString() : undefined;
+        this._archivePending.add(bookId);
+        this.renderLibrary();
+        this._updateReaderArchiveButton();
+
+        try {
+            const updated = await R2Provider.setArchived(bookId, archived);
+            if (updated) {
+                book.archived = updated.archived === true;
+                book.archivedAt = typeof updated.archivedAt === 'string' ? updated.archivedAt : undefined;
+            }
+            this._archivePending.delete(bookId);
+            this.renderLibrary();
+            this._updateReaderArchiveButton();
+            const message = archived ? `”${book.name}” arkistoitu` : `”${book.name}” palautettu arkistosta`;
+            const action = undoable
+                ? { label: 'Kumoa', onClick: () => this.setBookArchived(bookId, !archived, { undoable: false }) }
+                : null;
+            this.showToast(message, 'success', action);
+        } catch (error) {
+            console.error('Archive toggle failed:', error);
+            book.archived = prev.archived;
+            book.archivedAt = prev.archivedAt;
+            this._archivePending.delete(bookId);
+            this.renderLibrary();
+            this._updateReaderArchiveButton();
+            this.showToast(error.message || String(error), 'error');
+        }
+    },
+
+    /** Show / refresh the reader-header archive button for the open book. */
+    _updateReaderArchiveButton() {
+        const btn = document.getElementById('reader-archive-btn');
+        if (!btn) return;
+        const book = this.currentBook;
+        if (!this._canToggleArchive(book)) {
+            btn.classList.add('hidden');
+            return;
+        }
+        const label = book.archived ? 'Palauta arkistosta' : 'Arkistoi';
+        btn.title = label;
+        btn.setAttribute('aria-label', label);
+        btn.innerHTML = book.archived ? ICON_UNARCHIVE : ICON_ARCHIVE;
+        btn.disabled = this._archivePending.has(book.id);
+        btn.classList.remove('hidden');
     },
 
     /** Read persisted view mode, falling back to default for unknown values. */
@@ -970,14 +1142,17 @@ const App = {
         const partsText = book.isMultiPart ? `${book.ebookCount + book.audioCount} osaa` : '';
         const cover = this._coverFor(book);
         const typeLabel = this._bookTypeLabel(book);
+        const purged = book.audioAvailable === false;
 
         return `
-            <div class="book-card" data-book-id="${book.id}" data-book-type="${book.primaryType}">
+            <div class="book-card${purged ? ' audio-purged' : ''}" data-book-id="${book.id}" data-book-type="${book.primaryType}">
                 <div class="book-cover">
                     ${this._coverFallbackSvg(book.primaryType === 'audio' ? 'audio' : 'ebook')}
                     ${this._renderCoverSlot(cover)}
                     ${book.primaryType === 'both' ? '<span class="book-type-badge">Kirja + Audio</span>' : ''}
+                    ${purged ? '<span class="purged-badge">Äänet poistettu</span>' : ''}
                     ${partsText ? `<span class="parts-indicator">${partsText}</span>` : ''}
+                    ${this._renderArchiveButton(book)}
                     <div class="book-progress">
                         <div class="book-progress-bar" style="width: ${progress}%"></div>
                     </div>
@@ -1001,22 +1176,24 @@ const App = {
         const typeLabel = this._bookTypeLabel(book);
         const progressText = progress > 0 ? `${progress}% luettu` : '';
         const meta = [partsText + typeLabel, progressText].filter(Boolean).join(' · ');
+        const purged = book.audioAvailable === false;
 
         return `
-            <div class="book-card book-row" data-book-id="${book.id}" data-book-type="${book.primaryType}">
+            <div class="book-card book-row${purged ? ' audio-purged' : ''}" data-book-id="${book.id}" data-book-type="${book.primaryType}">
                 <div class="row-cover">
                     ${this._coverFallbackSvg(book.primaryType === 'audio' ? 'audio' : 'ebook', 'small')}
                     ${this._renderCoverSlot(cover)}
                 </div>
                 <div class="file-details">
                     <div class="file-name">${book.name}</div>
-                    <div class="file-meta">${meta}</div>
+                    <div class="file-meta">${meta}${purged ? ' <span class="purged-badge purged-badge-inline">Äänet poistettu</span>' : ''}</div>
                 </div>
                 ${progress > 0 ? `
                     <div class="row-progress">
                         <div class="row-progress-bar" style="width: ${progress}%"></div>
                     </div>
                 ` : ''}
+                ${this._renderArchiveButton(book)}
             </div>
         `;
     },
@@ -1236,6 +1413,16 @@ const App = {
         // the same dispatcher.
         content.querySelectorAll('.book-card').forEach(c => c.addEventListener('click', () => openFromCard(c)));
         content.querySelectorAll('.file-item').forEach(c => c.addEventListener('click', () => openFromCard(c)));
+
+        // Archive buttons sit inside the cards — stop the click from also
+        // opening the book.
+        content.querySelectorAll('.archive-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const book = (this.library?.books || []).find(b => b.id === btn.dataset.archiveId);
+                if (book) this.setBookArchived(book.id, !book.archived);
+            });
+        });
     },
 
     // ---------------------------------------------------------------
@@ -1337,6 +1524,13 @@ const App = {
      * Open a multi-part book
      */
     async openBook(book) {
+        // Audio purged from R2 (see docs/uploading-books.md) — the entry
+        // is kept for its metadata, but there's nothing left to play.
+        if (book.audioAvailable === false) {
+            this.showToast('Tämän kirjan äänitiedostot on poistettu, eikä sitä voi enää kuunnella', 'warning');
+            return;
+        }
+
         this.currentBook = book;
 
         let startIndex = 0;
@@ -1443,6 +1637,7 @@ const App = {
         }
 
         this.updateModeIcon();
+        this._updateReaderArchiveButton();
     },
 
     /**
@@ -1775,18 +1970,32 @@ const App = {
     /**
      * Show toast notification
      */
-    showToast(message, type = 'info') {
+    showToast(message, type = 'info', action = null) {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
         toast.textContent = message;
+
+        // Optional inline action (e.g. { label: 'Kumoa', onClick }) — runs
+        // once and dismisses the toast.
+        if (action?.label && typeof action.onClick === 'function') {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'toast-action';
+            btn.textContent = action.label;
+            btn.addEventListener('click', () => {
+                toast.remove();
+                action.onClick();
+            }, { once: true });
+            toast.appendChild(btn);
+        }
         container.appendChild(toast);
 
-        // Remove after 3 seconds
+        // Remove after 3 seconds (longer when there's an action to hit)
         setTimeout(() => {
             toast.style.opacity = '0';
             setTimeout(() => toast.remove(), 300);
-        }, 3000);
+        }, action ? 6000 : 3000);
     }
 };
 

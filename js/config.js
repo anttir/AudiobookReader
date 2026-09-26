@@ -128,6 +128,11 @@ const CONFIG = {
     // user-overridable R2 baseUrl) because auth always goes through the
     // canonical Worker.
     AUTH_BASE_URL: 'https://audiobookreader-r2.audiobooks.workers.dev',
+
+    // Google accounts that see the archive / unarchive buttons on R2 books.
+    // UI-only gate — the r2-auth-worker enforces its own ADMIN_EMAILS list
+    // (tools/r2-auth-worker/wrangler.toml), so keep the two in sync.
+    ARCHIVE_ADMIN_EMAILS: ['antti.rasi@gmail.com'],
 };
 
 // Freeze config to prevent accidental modifications
@@ -136,3 +141,4 @@ Object.freeze(CONFIG.SUPPORTED_TYPES);
 Object.freeze(CONFIG.DEFAULTS);
 Object.freeze(CONFIG.STORAGE_KEYS);
 Object.freeze(CONFIG.API);
+Object.freeze(CONFIG.ARCHIVE_ADMIN_EMAILS);

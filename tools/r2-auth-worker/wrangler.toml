@@ -4,6 +4,8 @@
 #   - `name`: appears in the deployed URL as <name>.<account>.workers.dev
 #   - `bucket_name`: must match your R2 bucket
 #   - `ALLOWED_EMAILS`: comma-separated Google account allowlist
+#   - `ADMIN_EMAILS`: subset allowed to call the write API
+#     (`POST /_api/archive`); must also be in ALLOWED_EMAILS
 #   - `CORS_ALLOWED_ORIGINS`: origins from which the web app makes requests
 #     (also the set of allowed /auth/login return origins, unless APP_ORIGINS
 #     is set)
@@ -30,6 +32,7 @@ bucket_name = "audiobooks"
 [vars]
 GOOGLE_CLIENT_ID = "524735149839-e3pfcqlji0ij1f45tpf3af2ivqkosdgg.apps.googleusercontent.com"
 ALLOWED_EMAILS = "antti.rasi@gmail.com,anu.hynninen2@gmail.com"
+ADMIN_EMAILS = "antti.rasi@gmail.com"
 CORS_ALLOWED_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000,https://anttir.github.io"
 
 # Optional: observability — uncomment to enable Tail logs in the dashboard

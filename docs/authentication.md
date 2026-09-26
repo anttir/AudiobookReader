@@ -42,7 +42,10 @@ first-party fetch-kutsu — ei kolmannen osapuolen evästettä eikä piiloiframe
 
 ## Worker-endpointit
 
-`/auth/*`-polut; muut polut Worker palvelee R2-proxynä.
+`/auth/*`-polut; `POST /_api/archive` on ylläpitäjän arkistointi-endpoint
+(Bearer = sama Google access token kuin R2-luvussa, ei session-token; ks.
+[uploading-books.md](uploading-books.md#archiving--purging)); muut polut
+Worker palvelee R2-proxynä.
 
 | Endpoint | Tehtävä |
 |---|---|
@@ -100,6 +103,11 @@ session-token = "v1." + base64url(iv) + "." + base64url(ciphertext)
 - **XSS-huomio:** session-token `localStorage`ssa on pitkäikäinen
   bearer-kredentiaali (sisältää sinetöidyn refresh tokenin). Jos XSS on
   uhkamallissa, same-site HttpOnly-eväste­malli pienentää vahinkosädettä.
+  Lieventää: `index.html`:n **Content-Security-Policy** (`<meta>`) sallii
+  skriptit vain omasta originista + versioon lukituista CDN-poluista ja
+  `fetch`/`img`/`media`-yhteydet vain Workeriin ja Googlen API:hin
+  (top-level-navigaatiota CSP ei rajoita, joten tämä vaikeuttaa mutta ei
+  estä exfiltraatiota).
 
 ## Tunnetut rajoitteet
 

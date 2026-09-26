@@ -13,6 +13,17 @@
  *              makes token refresh work on iOS Safari, where the old GIS
  *              hidden-iframe silent refresh is blocked by ITP.
  *
+ *   POST /_api/archive — the only write endpoint (admin-only, see
+ *              handleArchive). Authenticates exactly like the R2 proxy
+ *              (Google access token → tokeninfo → ALLOWED_EMAILS) plus an
+ *              ADMIN_EMAILS check, but accepts the token only via
+ *              `Authorization: Bearer` and requires a JSON Content-Type —
+ *              both force a CORS preflight, which is what stops it being
+ *              triggered as a cross-site "simple request". Only POST (+ its
+ *              preflight) is routed there; GET/HEAD on that path fall through
+ *              to a plain R2 read, so it can never shadow an object. Book ids
+ *              are kebab-case slugs, so `_api/` never collides with a book.
+ *
  *   everything else — the original authenticated R2 proxy: verifies a Google
  *              access token (header or ?_token=), checks the email allowlist,
  *              and streams the requested R2 object (with Range support).
@@ -26,6 +37,7 @@
  *   - GOOGLE_CLIENT_ID   (var)    OAuth web client id
  *   - GOOGLE_CLIENT_SECRET (secret) OAuth web client secret  ← new
  *   - ALLOWED_EMAILS     (var)    comma-separated allowlist
+ *   - ADMIN_EMAILS       (var)    subset allowed to call POST /_api/archive
  *   - CORS_ALLOWED_ORIGINS (var)  app origins (also used for /auth CORS)
  *   - APP_ORIGINS        (var, optional) overrides allowed return origins
  *   - BUCKET             (binding) R2 bucket
@@ -43,9 +55,19 @@ const SCOPE_DRIVE =
 // A session token older than this must re-authenticate.
 const SESSION_MAX_AGE_MS = 90 * 24 * 3600 * 1000;
 
+const ARCHIVE_PATH = '/_api/archive';
+const MANIFEST_KEY = 'index.json';
+// Optimistic-concurrency retries for the index.json read-modify-write.
+const ARCHIVE_MAX_ATTEMPTS = 3;
+
 export default {
     async fetch(request, env, ctx) {
         const url = new URL(request.url);
+        // Admin API — only POST (+ its preflight) is routed here; GET/HEAD on
+        // the same path keep the R2 read behaviour (handleR2).
+        if (url.pathname === ARCHIVE_PATH && request.method !== 'GET' && request.method !== 'HEAD') {
+            return handleArchiveRoute(request, env, ctx, url);
+        }
         if (url.pathname.startsWith('/auth/')) {
             try {
                 switch (url.pathname) {
@@ -356,6 +378,167 @@ function b64urlDecode(str) {
 
 function parseList(v) {
     return (v || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+// =====================================================================
+// Admin API: POST /_api/archive
+// =====================================================================
+
+/** Method dispatch + error envelope for ARCHIVE_PATH (never GET/HEAD). */
+async function handleArchiveRoute(request, env, ctx, url) {
+    const origin = request.headers.get('Origin') || '';
+    const apiCors = buildApiCorsHeaders(origin, env);
+    if (request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: apiCors });
+    }
+    if (request.method !== 'POST') {
+        return json({ error: 'method_not_allowed' }, 405, apiCors);
+    }
+    try {
+        return await handleArchive(request, url, env, ctx, apiCors);
+    } catch (err) {
+        // Uncaught errors would otherwise surface as a CORS-less 500 that the
+        // browser reports as an opaque network failure. The message itself
+        // isn't returned to the client — it can leak internal detail — only
+        // logged for the Worker's own tail.
+        console.error('handleArchive error:', err);
+        return json({ error: 'internal_error' }, 500, apiCors);
+    }
+}
+
+/**
+ * Bearer-only authentication for state-changing endpoints. Same token
+ * model as the R2 read path (a Google access token — the SPA mints it via
+ * /auth/token — verified by verifyGoogleToken, then ALLOWED_EMAILS), but
+ * never falls back to the `?_token=` query param: that form exists only for
+ * <audio src>/<img src> requests that can't set headers, and accepting it
+ * here would let a write be replayed from a URL (query strings end up in
+ * logs, history, Referer headers, ...) and would let a simple no-preflight
+ * POST reach the endpoint. The /auth session token is NOT accepted here —
+ * it only ever goes to /auth/token.
+ * Returns { email } on success or { response } carrying the 401/403.
+ */
+async function authenticateBearerOnly(request, url, env, ctx, cors) {
+    const token = bearer(request);
+    if (!token) {
+        if (url.searchParams.get('_token')) {
+            return { response: json({ error: 'bearer_required' }, 401, cors) };
+        }
+        return { response: json({ error: 'missing_token' }, 401, cors) };
+    }
+
+    const verified = await verifyGoogleToken(token, env, ctx);
+    if (!verified.ok) {
+        return { response: json({ error: 'invalid_token', detail: verified.error }, 401, cors) };
+    }
+
+    if (!parseList(env.ALLOWED_EMAILS).includes(verified.email)) {
+        return { response: json({ error: 'forbidden', email: verified.email }, 403, cors) };
+    }
+    return { email: verified.email };
+}
+
+/**
+ * POST /_api/archive  { id, archived }
+ *
+ * Admin-only (ADMIN_EMAILS). Flips `archived` / `archivedAt` on one
+ * index.json entry. The manifest is rewritten with an etag precondition so
+ * a concurrent uploader write isn't silently clobbered; on a lost race we
+ * re-read and retry, giving up with 409 after ARCHIVE_MAX_ATTEMPTS.
+ *
+ * Requires `Content-Type: application/json` (checked first, 415) and
+ * `Authorization: Bearer <token>` (see authenticateBearerOnly); both force
+ * a CORS preflight, which is the actual protection (a "simple request" —
+ * no preflight — can't carry a custom header or a non-form Content-Type).
+ */
+async function handleArchive(request, url, env, ctx, cors) {
+    const contentType = request.headers.get('Content-Type') || '';
+    if (!/^application\/json\s*(;.*)?$/i.test(contentType)) {
+        return json({ error: 'unsupported_media_type' }, 415, cors);
+    }
+
+    const auth = await authenticateBearerOnly(request, url, env, ctx, cors);
+    if (auth.response) return auth.response;
+    if (!parseList(env.ADMIN_EMAILS).includes(auth.email)) {
+        return json({ error: 'forbidden', email: auth.email }, 403, cors);
+    }
+
+    let body;
+    try {
+        body = await request.json();
+    } catch {
+        return json({ error: 'invalid_json' }, 400, cors);
+    }
+    const id = body?.id;
+    const archived = body?.archived;
+    if (typeof id !== 'string' || !id || typeof archived !== 'boolean') {
+        return json({ error: 'invalid_body', detail: 'expected { id: string, archived: boolean }' }, 400, cors);
+    }
+
+    for (let attempt = 1; attempt <= ARCHIVE_MAX_ATTEMPTS; attempt++) {
+        const obj = await env.BUCKET.get(MANIFEST_KEY);
+        if (!obj) return json({ error: 'manifest_not_found' }, 404, cors);
+
+        let manifest;
+        try {
+            manifest = JSON.parse(await obj.text());
+        } catch {
+            return json({ error: 'manifest_malformed' }, 500, cors);
+        }
+        if (!Array.isArray(manifest?.books)) {
+            return json({ error: 'manifest_malformed' }, 500, cors);
+        }
+
+        const entry = manifest.books.find(b => b && b.id === id);
+        if (!entry) return json({ error: 'book_not_found', id }, 404, cors);
+
+        // A purge tool (grab_book.py --purge) has already deleted this
+        // book's audio and set audioAvailable: false. Unarchiving it would
+        // put it back in the active library with no audio to play — the
+        // app hides the unarchive button for such books, but the worker
+        // is the actual gate, so enforce it here too. Re-archiving (or
+        // archiving) a purged book is still fine.
+        if (archived === false && entry.audioAvailable === false) {
+            return json({ error: 'audio_purged' }, 409, cors);
+        }
+
+        // Already in the requested state → nothing to write (keeps the
+        // original archivedAt on a repeated archive).
+        const unchanged = archived
+            ? entry.archived === true
+            : !('archived' in entry) && !('archivedAt' in entry);
+        if (unchanged) return json({ ok: true, book: entry }, 200, cors);
+
+        if (archived) {
+            entry.archived = true;
+            entry.archivedAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+        } else {
+            delete entry.archived;
+            delete entry.archivedAt;
+        }
+
+        const written = await env.BUCKET.put(MANIFEST_KEY, JSON.stringify(manifest, null, 2), {
+            // R2Object.etag is the unquoted form, which is what etagMatches wants.
+            onlyIf: { etagMatches: obj.etag },
+            httpMetadata: {
+                ...obj.httpMetadata,
+                contentType: obj.httpMetadata?.contentType || 'application/json',
+            },
+            customMetadata: obj.customMetadata,
+        });
+        // put() resolves to null when the etag precondition failed.
+        if (written) return json({ ok: true, book: entry }, 200, cors);
+    }
+    return json({ error: 'conflict', detail: 'index.json kept changing, try again' }, 409, cors);
+}
+
+/** CORS for the admin API: same origin logic as R2 reads, but POST + JSON body. */
+function buildApiCorsHeaders(origin, env) {
+    return {
+        ...buildCorsHeaders(origin, env),
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    };
 }
 
 // =====================================================================

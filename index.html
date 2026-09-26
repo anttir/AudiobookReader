@@ -2,10 +2,50 @@
 <html lang="fi">
 <head>
     <meta charset="UTF-8">
+    <!-- Content-Security-Policy: strict allowlist of every origin the app
+         needs. Nothing else (e.g. bookbeat.com / *.akamaized.net) can be
+         contacted even if a manifest/playlist URL points there. Must stay
+         before any element that loads a resource. GitHub Pages can't set
+         headers, hence <meta> (frame-ancestors/report-uri are not
+         supported here). A custom R2 base URL (Settings) is blocked by
+         design — only R2_DEFAULT_BASE_URL is allowed.
+         Sign-in / Drive consent are top-level redirects to the Worker's
+         /auth/login (not governed by CSP); /auth/token + /auth/logout are
+         fetches to the same Worker origin (CONFIG.AUTH_BASE_URL), which is
+         why no accounts.google.com / oauth2.googleapis.com entry is needed.
+         When changing CDN versions / hosts in index.html, js/config.js
+         (R2_DEFAULT_BASE_URL / AUTH_BASE_URL), js/audioplayer.js
+         (HLS_JS_SRC) or js/pdfviewer.js (workerSrc), update this list too. -->
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src 'self'
+            https://apis.google.com
+            https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/
+            https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/
+            https://cdn.jsdelivr.net/npm/epubjs@0.3.93/
+            https://cdn.jsdelivr.net/npm/hls.js@1.5.20/;
+        style-src 'self' 'unsafe-inline' blob:
+            https://accounts.google.com/gsi/style
+            https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/;
+        img-src 'self' blob: data:
+            https://audiobookreader-r2.audiobooks.workers.dev
+            https://lh3.googleusercontent.com;
+        font-src 'self' blob: data:;
+        media-src blob: https://audiobookreader-r2.audiobooks.workers.dev;
+        connect-src 'self'
+            https://www.googleapis.com
+            https://audiobookreader-r2.audiobooks.workers.dev;
+        frame-src https://docs.google.com blob:;
+        worker-src blob:;
+        manifest-src 'self';
+        object-src 'none';
+        base-uri 'self';
+        form-action 'none'
+    ">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AudioBook Reader</title>
     <!-- Bump ?v= on every release so browsers fetch the new files. -->
-    <link rel="stylesheet" href="css/styles.css?v=20260712">
+    <link rel="stylesheet" href="css/styles.css?v=20260926b">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a1a2e">
     <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
@@ -133,6 +173,8 @@
                 <span id="current-chapter">Luku 1</span>
             </div>
             <div class="reader-actions">
+                <!-- Archive / unarchive (R2 admins only; icon + label set by App._updateReaderArchiveButton) -->
+                <button id="reader-archive-btn" class="icon-btn hidden" title="Arkistoi"></button>
                 <button id="toggle-mode" class="icon-btn" title="Vaihda tilaa">
                     <svg viewBox="0 0 24 24" class="mode-icon-read"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5z"/></svg>
                     <svg viewBox="0 0 24 24" class="mode-icon-listen hidden"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
@@ -381,19 +423,19 @@
 
     <!-- Scripts -->
     <!-- Bump ?v= on every release so browsers fetch the new files. -->
-    <script src="js/config.js?v=20260712"></script>
-    <script src="js/storage.js?v=20260712"></script>
-    <script src="js/auth.js?v=20260712"></script>
-    <script src="js/sync.js?v=20260712"></script>
-    <script src="js/providers/provider-base.js?v=20260712"></script>
-    <script src="js/providers/drive-provider.js?v=20260712"></script>
-    <script src="js/providers/r2-provider.js?v=20260712"></script>
-    <script src="js/providers/registry.js?v=20260712"></script>
-    <script src="js/cover-cache.js?v=20260712"></script>
-    <script src="js/epub-cover.js?v=20260712"></script>
-    <script src="js/pdfviewer.js?v=20260712"></script>
-    <script src="js/epubviewer.js?v=20260712"></script>
-    <script src="js/audioplayer.js?v=20260712"></script>
-    <script src="js/app.js?v=20260712"></script>
+    <script src="js/config.js?v=20260926b"></script>
+    <script src="js/storage.js?v=20260926b"></script>
+    <script src="js/auth.js?v=20260926b"></script>
+    <script src="js/sync.js?v=20260926b"></script>
+    <script src="js/providers/provider-base.js?v=20260926b"></script>
+    <script src="js/providers/drive-provider.js?v=20260926b"></script>
+    <script src="js/providers/r2-provider.js?v=20260926b"></script>
+    <script src="js/providers/registry.js?v=20260926b"></script>
+    <script src="js/cover-cache.js?v=20260926b"></script>
+    <script src="js/epub-cover.js?v=20260926b"></script>
+    <script src="js/pdfviewer.js?v=20260926b"></script>
+    <script src="js/epubviewer.js?v=20260926b"></script>
+    <script src="js/audioplayer.js?v=20260926b"></script>
+    <script src="js/app.js?v=20260926b"></script>
 </body>
 </html>

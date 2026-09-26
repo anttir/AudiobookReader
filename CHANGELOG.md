@@ -2,6 +2,18 @@
 
 Merkittävät muutokset, uusin ensin. Tarkka historia: git- ja PR-loki.
 
+## 2026-09
+
+- **Arkisto**: R2-kirjat voi arkistoida (ylläpitäjä) — kirjastossa
+  *Aktiiviset | Arkistoidut* -valinta, arkistointipainike kortissa, rivillä
+  ja soittimessa, "Äänet poistettu" -merkki kirjoille joiden äänet on
+  poistettu. Workerissa admin-only `POST /_api/archive` (vain Bearer +
+  JSON, etag-ehdollinen `index.json`-kirjoitus). Ks.
+  [docs/usage.md](docs/usage.md#arkisto).
+- **Content-Security-Policy** kaikilla sivuilla: yhteydet vain omaan
+  originiin, Workeriin, käytettyihin Google-endpointeihin ja versioon
+  lukittuihin CDN-kirjastoihin. Oma (ei-oletus) R2-URL ei siksi toimi.
+
 ## 2026-07
 
 - **Paluu edelliseen kuuntelukohtaan**: kun toistokohta hyppää yhtäkkiä

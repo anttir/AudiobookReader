@@ -251,21 +251,98 @@ def upload_segments_parallel(s3, bucket: str, prefix: str, segments_dir: Path,
 
 # ---------- manifest --------------------------------------------------------
 
-def fetch_manifest(s3, bucket: str) -> dict:
+# Optimistic-concurrency retries for the index.json read-modify-write, so a
+# concurrent write from the auth-worker's POST /_api/archive (or another
+# uploader run) isn't silently lost. Same approach as the sibling Bookbeat
+# project's grab_book.py `_update_manifest`.
+MANIFEST_WRITE_ATTEMPTS = 3
+
+
+def fetch_manifest_etag(s3, bucket: str) -> tuple[dict, str | None]:
+    """Fetch index.json + its ETag. ETag is None when the object doesn't exist yet."""
     try:
         resp = s3.get_object(Bucket=bucket, Key=INDEX_OBJECT_KEY)
-        return json.loads(resp["Body"].read())
+        return json.loads(resp["Body"].read()), resp.get("ETag")
     except ClientError as e:
         if e.response["Error"]["Code"] in ("NoSuchKey", "404"):
-            return {"version": 1, "books": []}
+            return {"version": 1, "books": []}, None
         raise
 
 
+def update_manifest(s3, bucket: str, mutate) -> dict:
+    """Conditional fetch-modify-put of index.json.
+
+    `mutate(manifest)` edits the freshly fetched manifest in place. The put
+    is conditional on the fetched ETag (`IfMatch`; `IfNoneMatch: '*'` when
+    the manifest doesn't exist yet). On a 412 PreconditionFailed — meaning
+    someone else (the auth-worker's archive endpoint, or another uploader
+    run) wrote index.json between our fetch and put — the whole
+    fetch-mutate-put cycle is retried, up to MANIFEST_WRITE_ATTEMPTS times;
+    `mutate` must be safe to re-apply to a freshly re-fetched manifest.
+    Raises RuntimeError if every attempt loses the race.
+    """
+    for attempt in range(1, MANIFEST_WRITE_ATTEMPTS + 1):
+        manifest, etag = fetch_manifest_etag(s3, bucket)
+        mutate(manifest)
+        cond = {"IfMatch": etag} if etag else {"IfNoneMatch": "*"}
+        try:
+            s3.put_object(
+                Bucket=bucket,
+                Key=INDEX_OBJECT_KEY,
+                Body=json.dumps(manifest, indent=2).encode("utf-8"),
+                ContentType=CONTENT_TYPES[".json"],
+                **cond,
+            )
+            return manifest
+        except ClientError as e:
+            status = e.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            code = e.response.get("Error", {}).get("Code")
+            if status == 412 or code in ("PreconditionFailed", "ConditionalRequestConflict"):
+                print(f"  index.json changed concurrently (attempt {attempt}/"
+                      f"{MANIFEST_WRITE_ATTEMPTS}) — retrying ...")
+                time.sleep(0.5 * attempt)
+                continue
+            raise
+    raise RuntimeError(
+        f"index.json kept changing concurrently — gave up after {MANIFEST_WRITE_ATTEMPTS} attempts"
+    )
+
+
+# Fields this script doesn't collect (no CLI flag) or only sets
+# conditionally (--cover / --chapters), plus the two fields owned by the
+# auth-worker's archive endpoint. A re-upload that omits one of these must
+# not erase a value set by a previous upload, --backfill-r2, or the archive
+# UI, so upsert_book merges onto the existing entry instead of replacing it
+# wholesale.
+MERGE_PRESERVE_KEYS = (
+    "author", "narrator", "isbn", "language", "chapters", "cover",
+    "archived", "archivedAt",
+)
+
+# Audio-state fields written by grab_book.py --purge. Always dropped here:
+# this script only performs full audio uploads, so a successful run means
+# the audio is back in the bucket.
+AUDIO_STATE_FIELDS = ("audioAvailable", "purgedAt")
+
+
 def upsert_book(manifest: dict, entry: dict) -> dict:
+    """Merge `entry` onto the existing book with the same id (or append).
+
+    Starts from `entry` (this upload's fresh values always win) and carries
+    over any MERGE_PRESERVE_KEYS the existing entry has that `entry` doesn't
+    set. AUDIO_STATE_FIELDS are always removed, since a full audio upload
+    means the audio is available again.
+    """
     books = manifest.setdefault("books", [])
     for i, b in enumerate(books):
         if b.get("id") == entry["id"]:
-            books[i] = entry
+            merged = dict(entry)
+            for key in MERGE_PRESERVE_KEYS:
+                if key in b and key not in entry:
+                    merged[key] = b[key]
+            for key in AUDIO_STATE_FIELDS:
+                merged.pop(key, None)
+            books[i] = merged
             return manifest
     books.append(entry)
     return manifest
@@ -342,7 +419,6 @@ def main() -> int:
             upload_file(s3, creds["bucket"], args.cover, cover_key)
 
     print("Updating index.json …")
-    manifest = fetch_manifest(s3, creds["bucket"])
     entry = {
         "id": args.book_id,
         "name": args.book_name,
@@ -354,11 +430,15 @@ def main() -> int:
         entry["cover"] = cover_key
     if chapters_payload:
         entry["chapters"] = chapters_payload
-    manifest = upsert_book(manifest, entry)
-    upload_bytes(
-        s3, creds["bucket"], json.dumps(manifest, indent=2).encode("utf-8"),
-        INDEX_OBJECT_KEY, content_type=CONTENT_TYPES[".json"],
-    )
+
+    def mutate(manifest: dict) -> None:
+        upsert_book(manifest, entry)
+
+    try:
+        update_manifest(s3, creds["bucket"], mutate)
+    except RuntimeError as e:
+        sys.stderr.write(f"ERROR: {e}\n")
+        return 1
 
     print()
     print(f"Done. Book '{args.book_name}' is live at:")
