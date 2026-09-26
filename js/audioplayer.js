@@ -44,7 +44,12 @@ const AudioPlayer = {
     _restoreDone: false,       // restore seek finished (or nothing to restore)
     _restoreTarget: null,      // saved position the restore seek goes to
     _offerContinue: false,     // toast "jatka kuunnellusta" once restored
-    _recovering: false,        // hls.js / element error recovery in progress
+    _restorePendingSince: null,// wall-clock ms the restore was first seen pending
+    _restoreRetried: false,    // restore seek re-issued once already
+    _recovering: false,        // hls.js media-error recovery in progress
+    _recoveringSince: null,
+    _recoverPlayed: 0,         // continuous playback (s) since recovery began
+    _loadGen: 0,               // bumped per load; stale deferred seeks check it
     _userIntentUntil: 0,       // explicit user seek → backwards save allowed
     _lastSaveAt: 0,
     _lastBlockReason: null,
@@ -67,6 +72,16 @@ const AudioPlayer = {
     // timeupdate fires ~4 Hz; persist at most this often while playing.
     // Pause / hide / unload / stop still save immediately.
     SAVE_THROTTLE_MS: 5000,
+    // Restore seek still not landed after this long (while timeupdates
+    // run): re-issue it once, then stop waiting — the zero/backwards
+    // guard still protects the stored position.
+    RESTORE_TIMEOUT_MS: 10000,
+    // Media-error recovery counts as over after this much continuous
+    // playback (s), or at the latest after RECOVERY_MAX_MS.
+    RECOVERY_CLEAR_S: 3,
+    RECOVERY_MAX_MS: 30000,
+    // "Jatka kuunnellusta" never targets the very end of the file.
+    END_MARGIN_S: 5,
 
     // hls.js CDN — pinned version. Update intentionally; do not float to @latest.
     HLS_JS_SRC: 'https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js',
@@ -125,8 +140,7 @@ const AudioPlayer = {
         // element directly without going through our UI).
         this.audio.addEventListener('seeking', () => this._onSeeking());
         this.audio.addEventListener('seeked', () => this._onSeeked());
-        // Playback actually running again = any error recovery is over.
-        this.audio.addEventListener('playing', () => { this._recovering = false; });
+        this.audio.addEventListener('playing', () => this._onPlaying());
 
         // Background-tab resilience: when the audio element stalls (Chrome
         // throttles segment loads for hidden tabs), poke hls.js to resume
@@ -155,6 +169,9 @@ const AudioPlayer = {
         document.getElementById('position-history-btn').addEventListener('click', (e) => {
             e.stopPropagation();
             this.togglePositionHistory();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.togglePositionHistory(false);
         });
         // Close the history popover on any click outside it
         document.addEventListener('click', (e) => {
@@ -321,6 +338,9 @@ const AudioPlayer = {
         this._lastStableTime = null;
 
         this.currentItem = item;
+        // Invalidates deferred (loadedmetadata) seeks queued for the
+        // previous load, so they can't land on this track.
+        this._loadGen++;
 
         // Recovery state for this track: maxTime + history from storage
         // (merged with what we held in memory on a same-track reload).
@@ -384,11 +404,7 @@ const AudioPlayer = {
                 // For HLS the seek must wait until manifest is parsed; we
                 // queue it via a one-shot listener.
                 if (isHls && (!this.audio.duration || isNaN(this.audio.duration))) {
-                    const onReady = () => {
-                        this.audio.currentTime = progress.currentTime;
-                        this.audio.removeEventListener('loadedmetadata', onReady);
-                    };
-                    this.audio.addEventListener('loadedmetadata', onReady);
+                    this._whenMetadata(() => { this.audio.currentTime = progress.currentTime; });
                 } else {
                     this.audio.currentTime = progress.currentTime;
                 }
@@ -570,34 +586,7 @@ const AudioPlayer = {
                     this._handleAuthError();
                     return;
                 }
-                // For other fatal errors (most commonly a flaky mobile
-                // connection mid-segment) try to recover transparently
-                // before surfacing anything. hls.js exposes
-                // startLoad()/recoverMediaError() exactly for this.
-                if (this._hlsRecoveryAttempts >= 3) {
-                    App.showToast('HLS-virhe: ' + (data.details || 'tuntematon'), 'error');
-                    return;
-                }
-                this._hlsRecoveryAttempts++;
-                // Recovery can briefly report currentTime 0 (media
-                // re-attach) — don't let that reach storage. Cleared on
-                // the next `playing` / `seeked`.
-                this._recovering = true;
-                const wasPlaying = !this.audio.paused;
-                if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
-                    console.warn(`HLS network recovery attempt #${this._hlsRecoveryAttempts}: ${data.details}`);
-                    try { this.hls.startLoad(); } catch (e) { console.error(e); }
-                } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
-                    console.warn(`HLS media recovery attempt #${this._hlsRecoveryAttempts}: ${data.details}`);
-                    try { this.hls.recoverMediaError(); } catch (e) { console.error(e); }
-                } else {
-                    App.showToast('HLS-virhe: ' + (data.details || 'tuntematon'), 'error');
-                    return;
-                }
-                // Resume playback if the stall paused us
-                if (wasPlaying) {
-                    this.audio.play().catch(err => console.warn('Auto-resume after HLS recovery failed:', err));
-                }
+                this._recoverHlsError(data, window.Hls.ErrorTypes);
             });
             this.hls.loadSource(url);
             this.hls.attachMedia(this.audio);
@@ -610,6 +599,70 @@ const AudioPlayer = {
                 : url;
         } else {
             throw new Error('HLS-toistoa ei tueta tässä selaimessa');
+        }
+    },
+
+    /**
+     * Fatal non-auth hls.js error (most commonly a flaky mobile connection
+     * mid-segment): try to recover transparently before surfacing
+     * anything. hls.js exposes startLoad()/recoverMediaError() exactly for
+     * this. `types` = Hls.ErrorTypes.
+     */
+    _recoverHlsError(data, types) {
+        if (this._hlsRecoveryAttempts >= 3) {
+            App.showToast('HLS-virhe: ' + (data.details || 'tuntematon'), 'error');
+            return;
+        }
+        this._hlsRecoveryAttempts++;
+        const wasPlaying = !this.audio.paused;
+        if (data.type === types.NETWORK_ERROR) {
+            // startLoad() doesn't move the playhead (the element often
+            // keeps playing from its buffer), so saves stay allowed; a
+            // transient 0 is caught by the zero/backwards guard anyway.
+            console.warn(`HLS network recovery attempt #${this._hlsRecoveryAttempts}: ${data.details}`);
+            try { this.hls?.startLoad(); } catch (e) { console.error(e); }
+        } else if (data.type === types.MEDIA_ERROR) {
+            // recoverMediaError() re-attaches the media, which can briefly
+            // report currentTime 0 — keep the position out of storage until
+            // playback has run continuously again (see _trackRecovery).
+            console.warn(`HLS media recovery attempt #${this._hlsRecoveryAttempts}: ${data.details}`);
+            this._setRecovering();
+            try { this.hls?.recoverMediaError(); } catch (e) { console.error(e); }
+        } else {
+            App.showToast('HLS-virhe: ' + (data.details || 'tuntematon'), 'error');
+            return;
+        }
+        // Resume playback if the stall paused us
+        if (wasPlaying) {
+            this.audio.play().catch(err => console.warn('Auto-resume after HLS recovery failed:', err));
+        }
+    },
+
+    _setRecovering() {
+        this._recovering = true;
+        this._recoveringSince = Date.now();
+        this._recoverPlayed = 0;
+    },
+
+    _clearRecovering() {
+        this._recovering = false;
+        this._recoveringSince = null;
+        this._recoverPlayed = 0;
+    },
+
+    /**
+     * Per timeupdate while recovering: over once playback has run
+     * continuously for RECOVERY_CLEAR_S, or RECOVERY_MAX_MS have passed —
+     * so a recovery that never produces `playing`/`seeked` can't block
+     * saves for the rest of the session.
+     */
+    _trackRecovery(played, jumped) {
+        if (!this._recovering) return;
+        if (this._recoveringSince == null) this._recoveringSince = Date.now();
+        this._recoverPlayed = jumped ? 0 : (this._recoverPlayed || 0) + played;
+        if (this._recoverPlayed >= this.RECOVERY_CLEAR_S
+            || Date.now() - this._recoveringSince >= this.RECOVERY_MAX_MS) {
+            this._clearRecovering();
         }
     },
 
@@ -639,6 +692,8 @@ const AudioPlayer = {
         // one-shot auth-retry guard so a later expiry can recover too. (HLS
         // does the equivalent on FRAG_LOADED.)
         this._authRefreshAttempted = false;
+
+        this._checkRestoreLanded();
 
         if (this.isLoading) return;
 
@@ -765,9 +820,12 @@ const AudioPlayer = {
         this._listen = null;
         this._restoreDone = false;
         this._restoreTarget = null;
+        this._restorePendingSince = null;
+        this._restoreRetried = false;
         this._offerContinue = false;
-        this._recovering = false;
+        this._clearRecovering();
         this._userIntentUntil = 0;
+        this._loadGen++;   // drop deferred seeks queued for this track
         this.togglePositionHistory(false);
         this._renderRecovery();
     },
@@ -836,15 +894,14 @@ const AudioPlayer = {
 
         // Track the "stable" playhead position for jump detection. Not
         // updated mid-seek, so when `seeking` fires this still holds the
-        // position the user was actually listening at.
-        if (!this.audio.seeking) this._lastStableTime = current;
-
-        // Restore seek landed without a `seeked` we could attribute to it
-        // (e.g. the element applied it as the default start position).
-        if (!this._restoreDone && this._restoreTarget != null && !this.audio.seeking
-            && this.audio.readyState >= 2 && Math.abs(current - this._restoreTarget) < 2) {
-            this._markRestoreDone();
+        // position the user was actually listening at. Also not before
+        // metadata: the teardown load() queues a timeupdate at 0 that
+        // would otherwise make the restore seek look like a jump from 0.
+        if (!this.audio.seeking && this.audio.readyState >= 1 && !isNaN(duration)) {
+            this._lastStableTime = current;
         }
+
+        if (!this._restoreDone) this._checkRestoreLanded(true);
 
         if (!isNaN(duration)) {
             // Update progress bar
@@ -858,6 +915,7 @@ const AudioPlayer = {
             this._updateCurrentChapter(current);
 
             // "Kuunneltu asti" + periodic history checkpoint
+            let played = 0, jumped = false;
             if (this._restoreDone && this._listen) {
                 const res = this.stepListenTracker(this._listen, {
                     t: current,
@@ -866,12 +924,17 @@ const AudioPlayer = {
                     playing: !this.audio.paused && !this.audio.seeking,
                 }, this._maxTime);
                 this._maxTime = res.maxTime;
+                played = res.played;
+                jumped = res.jumped;
                 if (res.checkpoint) this._addHistory(current, 'checkpoint');
             }
+            this._trackRecovery(played, jumped);
             this._renderRecovery();
 
             // Save progress periodically (throttled)
-            if (Date.now() - this._lastSaveAt >= this.SAVE_THROTTLE_MS) this.saveProgress();
+            if (Date.now() - this._lastSaveAt >= this.SAVE_THROTTLE_MS) {
+                this.saveProgress({ periodic: true });
+            }
         }
     },
 
@@ -941,6 +1004,8 @@ const AudioPlayer = {
             this._suppressJumpDetection = false;
             return;
         }
+        // The restore seek (and anything before it lands) isn't a jump.
+        if (!this._restoreDone) return;
         const from = this._lastStableTime;
         const to = this.audio.currentTime;
         if (from == null || isNaN(to)) return;
@@ -966,9 +1031,70 @@ const AudioPlayer = {
      * is persisted right away (the intent window is short).
      */
     _onSeeked() {
-        this._recovering = false;
         if (!this._restoreDone && this._restoreTarget != null) this._markRestoreDone();
-        if (this._hasUserIntent()) this.saveProgress();
+        if (this._hasUserIntent()) this.saveProgress({ periodic: true });
+    },
+
+    /** `playing`: if the restore seek was silently dropped, retry it. */
+    _onPlaying() {
+        this._checkRestoreLanded();
+    },
+
+    /**
+     * Restore-seek watchdog. Marks the restore done once the element sits
+     * at the target. If it doesn't (seek silently ignored — iOS, or a seek
+     * before the range was seekable): on canplay/playing re-issue it once;
+     * from timeupdate (`timed`) re-issue after RESTORE_TIMEOUT_MS, and
+     * after another one stop waiting so saves / maxTime aren't frozen for
+     * the session. The zero/backwards guard still protects the stored
+     * position in that case.
+     */
+    _checkRestoreLanded(timed = false) {
+        if (this._restoreDone || this._restoreTarget == null || this.audio.seeking) return;
+        const current = this.audio.currentTime;
+        if (this.audio.readyState >= 2 && Math.abs(current - this._restoreTarget) < 2) {
+            this._markRestoreDone();
+            return;
+        }
+        if (!(this.audio.readyState >= 1)) return;   // no metadata yet — can't seek
+        if (!timed) {
+            this._retryRestoreSeek();
+            return;
+        }
+        if (this._restorePendingSince == null) {
+            this._restorePendingSince = Date.now();
+            return;
+        }
+        if (Date.now() - this._restorePendingSince < this.RESTORE_TIMEOUT_MS) return;
+        if (this._retryRestoreSeek()) {
+            this._restorePendingSince = Date.now();
+            return;
+        }
+        console.warn(`[progress] restore seek to ${this.formatTime(this._restoreTarget)} did not land; continuing at ${this.formatTime(current)}`);
+        this._markRestoreDone(current);
+    },
+
+    /** Re-issue the restore seek (once per load). */
+    _retryRestoreSeek() {
+        if (this._restoreRetried) return false;
+        this._restoreRetried = true;
+        const d = this.audio.duration;
+        this.audio.currentTime = Number.isFinite(d) ? Math.min(this._restoreTarget, d) : this._restoreTarget;
+        return true;
+    },
+
+    /**
+     * Run `fn` on the next loadedmetadata — unless another track has been
+     * loaded by then (the listener would otherwise seek the new track to
+     * the old one's position).
+     */
+    _whenMetadata(fn) {
+        const gen = this._loadGen;
+        const onReady = () => {
+            this.audio.removeEventListener('loadedmetadata', onReady);
+            if (gen === this._loadGen) fn();
+        };
+        this.audio.addEventListener('loadedmetadata', onReady);
     },
 
     /** Explicit user seek: a backwards position may be saved for a moment. */
@@ -999,8 +1125,12 @@ const AudioPlayer = {
         this._listen = this._newListenState();
         this._restoreDone = false;
         this._restoreTarget = null;
-        this._offerContinue = !sameTrack;
-        this._recovering = false;
+        this._restorePendingSince = null;
+        this._restoreRetried = false;
+        // Also on a same-track reload (auth refresh): if its restore lands
+        // well behind maxTime, the user should hear about it.
+        this._offerContinue = true;
+        this._clearRecovering();
         this._userIntentUntil = 0;
         this._lastBlockReason = null;
         this.togglePositionHistory(false);
@@ -1016,24 +1146,44 @@ const AudioPlayer = {
      * the restored position is well behind "kuunneltu asti" — typically a
      * position that got reset to 0 — offer to continue from there.
      */
-    _markRestoreDone() {
+    _markRestoreDone(restoredTo = this._restoreTarget ?? 0) {
         if (this._restoreDone) return;
         this._restoreDone = true;
-        const restoredTo = this._restoreTarget ?? 0;
         this._restoreTarget = null;
+        this._restorePendingSince = null;
         this._listen = this._newListenState();
         if (this._offerContinue) {
             this._offerContinue = false;
-            const maxTime = this._maxTime;
+            const maxTime = this._continueTarget();
             if (maxTime !== undefined && maxTime - restoredTo > this.BACKWARD_GUARD_S
-                && typeof App !== 'undefined') {
+                && typeof App !== 'undefined' && this.currentItem) {
+                // Bind the offer to this book + value: the toast outlives
+                // track switches.
+                const key = this._progressKeyFor(this.currentItem);
                 App.showToast('Tallennettu kohta on ennen kuunneltua kohtaa', 'info', {
                     label: `Jatka kohdasta ${this.formatTime(maxTime)}`,
-                    onClick: () => this.continueFromMax(),
+                    onClick: () => {
+                        if (!this.currentItem || this._progressKeyFor(this.currentItem) !== key) return;
+                        this._userSeekTo(maxTime, this.END_MARGIN_S);
+                    },
                 });
             }
         }
         this._renderRecovery();
+    },
+
+    /**
+     * Where "Jatka kuunnellusta" goes: maxTime, kept END_MARGIN_S clear
+     * of the end of the file. Undefined when there's nothing sensible to
+     * continue to (unknown, or the file is listened to the end).
+     */
+    _continueTarget() {
+        const maxTime = this._maxTime;
+        if (maxTime === undefined) return undefined;
+        const duration = this.audio?.duration;
+        if (!Number.isFinite(duration)) return maxTime;
+        if (maxTime >= duration - this.END_MARGIN_S) return undefined;
+        return maxTime;
     },
 
     /**
@@ -1052,10 +1202,12 @@ const AudioPlayer = {
      * @param {{t:number, now:number, rate:number, playing:boolean}} tick
      *        t = currentTime (s), now = performance.now() (ms)
      * @param {number|undefined} maxTime
-     * @returns {{maxTime:number|undefined, checkpoint:boolean}}
+     * @returns {{maxTime:number|undefined, checkpoint:boolean,
+     *            played:number, jumped:boolean}}  played = seconds of
+     *          continuous playback this step; jumped = run restarted
      */
     stepListenTracker(st, { t, now, rate, playing }, maxTime) {
-        let checkpoint = false;
+        let checkpoint = false, played = 0, jumped = false;
         const seekSeen = st.seekSeen;
         st.seekSeen = false;
         if (st.prev == null) {
@@ -1070,7 +1222,9 @@ const AudioPlayer = {
             if (!continuous) {
                 st.runStart = t;
                 st.runPlayed = 0;
+                jumped = true;
             } else if (playing && delta > 0) {
+                played = delta;
                 st.runPlayed += delta;
                 st.cpPlayed += delta;
                 if (st.cpPlayed >= this.CHECKPOINT_S) {
@@ -1087,7 +1241,7 @@ const AudioPlayer = {
                 && st.runStart <= maxTime + this.CONTINUOUS_MAX_DELTA;
             if (anchored || st.runPlayed >= this.FORWARD_ADOPT_S) maxTime = t;
         }
-        return { maxTime, checkpoint };
+        return { maxTime, checkpoint, played, jumped };
     },
 
     /**
@@ -1120,26 +1274,33 @@ const AudioPlayer = {
         if (!Number.isFinite(t)) return;
         this._history = Storage.mergeHistory([{ t, at: Date.now(), reason }], this._history);
         this._renderRecovery();
-        this.saveProgress();
+        this.saveProgress({ periodic: true });
     },
 
-    /** Seek (explicitly) to a position; queued if metadata isn't loaded. */
-    _userSeekTo(target) {
+    /**
+     * Seek (explicitly) to a position, kept `endMargin` s clear of the
+     * end; queued if metadata isn't loaded (intent is re-marked then, so a
+     * slow load can't outlive the intent window).
+     */
+    _userSeekTo(target, endMargin = 0) {
         if (!Number.isFinite(target)) return;
-        this._markUserIntent();
-        const duration = this.audio.duration;
-        if (!duration || isNaN(duration)) {
-            const onReady = () => {
-                this.audio.currentTime = Math.min(target, this.audio.duration);
-                this.audio.removeEventListener('loadedmetadata', onReady);
-            };
-            this.audio.addEventListener('loadedmetadata', onReady);
+        const apply = () => {
+            this._markUserIntent();
+            // A recovery jump is its own gesture, not part of the scrub it
+            // repairs: take the current jump-back origin out of the merge
+            // window so this seek records where we leave (undoable).
+            if (this._jumpBack) this._jumpBack.at = 0;
+            const duration = this.audio.duration;
+            this.audio.currentTime = Math.max(0, Math.min(target, duration - endMargin));
+            // Refresh the chapter label immediately (matters when paused).
+            this._currentChapterIndex = -1;
+            this._updateCurrentChapter(this.audio.currentTime);
+        };
+        if (!this.audio.duration || isNaN(this.audio.duration)) {
+            this._whenMetadata(apply);
             return;
         }
-        this.audio.currentTime = Math.max(0, Math.min(target, duration));
-        // Refresh the chapter label immediately (matters when paused).
-        this._currentChapterIndex = -1;
-        this._updateCurrentChapter(this.audio.currentTime);
+        apply();
     },
 
     /**
@@ -1148,8 +1309,9 @@ const AudioPlayer = {
      * this can be undone too.
      */
     continueFromMax() {
-        if (this._maxTime === undefined) return;
-        this._userSeekTo(this._maxTime);
+        const target = this._continueTarget();
+        if (target === undefined) return;
+        this._userSeekTo(target, this.END_MARGIN_S);
     },
 
     /** Seek to a "Paikkahistoria" entry. */
@@ -1179,6 +1341,9 @@ const AudioPlayer = {
         const today = new Date().toDateString();
         for (const entry of this._history) {
             const li = document.createElement('li');
+            const row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'ph-row';
             const d = new Date(entry.at);
             const clock = d.toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit' });
             const when = document.createElement('span');
@@ -1192,14 +1357,30 @@ const AudioPlayer = {
             const pos = document.createElement('span');
             pos.className = 'ph-pos';
             pos.textContent = this.formatTime(entry.t);
-            li.append(when, chapter, pos);
-            li.title = entry.reason === 'checkpoint' ? 'Välitallennus' : 'Ennen hyppyä';
-            li.addEventListener('click', (e) => {
+            row.append(when, chapter);
+            // A position we listened at but couldn't save as the current
+            // one (blocked step back, see saveProgress) — call it out.
+            if (entry.reason === 'unsaved') {
+                const tag = document.createElement('span');
+                tag.className = 'ph-tag';
+                tag.textContent = 'keskeytynyt';
+                row.append(tag);
+            }
+            row.append(pos);
+            row.title = this.HISTORY_REASON_LABELS[entry.reason] || '';
+            row.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.seekToHistory(entry);
             });
+            li.appendChild(row);
             list.appendChild(li);
         }
+    },
+
+    HISTORY_REASON_LABELS: {
+        jump: 'Ennen hyppyä',
+        checkpoint: 'Välitallennus',
+        unsaved: 'Keskeytynyt kuuntelu (kohtaa ei tallennettu nykyiseksi)',
     },
 
     /**
@@ -1223,8 +1404,9 @@ const AudioPlayer = {
         const left = Math.min(100, (maxTime / duration) * 100).toFixed(2) + '%';
         if (marker.style.left !== left) marker.style.left = left;
         marker.classList.toggle('hidden', !(maxTime > 0));
-        const behind = this._restoreDone
-            && maxTime - this.audio.currentTime > this.CONTINUE_SHOW_GAP;
+        const target = this._continueTarget();
+        const behind = this._restoreDone && target !== undefined
+            && target - this.audio.currentTime > this.CONTINUE_SHOW_GAP;
         btn.classList.toggle('hidden', !behind);
         const label = this.formatTime(maxTime);
         const timeEl = document.getElementById('continue-max-time');
@@ -1292,11 +1474,12 @@ const AudioPlayer = {
         const target = Math.max(0, chapter.start);
         this._markUserIntent();
         if (!this.audio.duration || isNaN(this.audio.duration)) {
-            const onReady = () => {
+            // Re-mark intent when the seek actually happens — a slow load
+            // can outlive the intent window.
+            this._whenMetadata(() => {
+                this._markUserIntent();
                 this.audio.currentTime = target;
-                this.audio.removeEventListener('loadedmetadata', onReady);
-            };
-            this.audio.addEventListener('loadedmetadata', onReady);
+            });
             return;
         }
         this.audio.currentTime = target;
@@ -1390,9 +1573,6 @@ const AudioPlayer = {
      */
     onError(e) {
         console.error('Audio error:', e);
-        // Until playback runs again, the element's position isn't
-        // trustworthy — keep it out of storage.
-        this._recovering = true;
         const code = this.audio.error?.code;
         if (this.audio.error) {
             console.error('Audio error code:', code);
@@ -1457,10 +1637,16 @@ const AudioPlayer = {
      * (no transient 0s / unintended big steps back); maxTime and history
      * are merged with what's stored and written even when the position
      * isn't, so they never shrink.
+     *
+     * `periodic: true` = throttled/internal save. Without it this is a
+     * "last chance" save (pause, hide, unload, stop, track switch): if the
+     * position is then refused as a step back, it goes into the history
+     * as 'unsaved' so a deliberate scrub back (lock screen) isn't lost.
      */
-    saveProgress() {
+    saveProgress({ periodic = false } = {}) {
         if (!this.currentItem) return;
         this._lastSaveAt = Date.now();
+        this._trackRecovery(0, false);   // time-box also while paused
 
         const current = this.audio.currentTime;
         const duration = this.audio.duration;
@@ -1468,13 +1654,6 @@ const AudioPlayer = {
 
         const pKey = this._progressKeyFor(this.currentItem);
         const stored = Storage.getBookProgress(pKey);
-        const maxTime = Storage.maxDefined(this._maxTime, stored?.maxTime);
-        const history = Storage.mergeHistory(this._history, stored?.history);
-        this._maxTime = maxTime;
-        this._history = history;
-        const recovery = {};
-        if (maxTime !== undefined) recovery.maxTime = maxTime;
-        if (history.length) recovery.history = history;
 
         const block = this.positionSaveBlock({
             t: current,
@@ -1489,6 +1668,19 @@ const AudioPlayer = {
             if (block) console.info(`[progress] not saving position ${this.formatTime(current)}: ${block}`);
             this._lastBlockReason = block;
         }
+        if (block === 'backwards' && !periodic) {
+            this._history = Storage.mergeHistory(
+                [{ t: current, at: Date.now(), reason: 'unsaved' }], this._history);
+            this._renderRecovery();
+        }
+
+        const maxTime = Storage.maxDefined(this._maxTime, stored?.maxTime);
+        const history = Storage.mergeHistory(this._history, stored?.history);
+        this._maxTime = maxTime;
+        this._history = history;
+        const recovery = {};
+        if (maxTime !== undefined) recovery.maxTime = maxTime;
+        if (history.length) recovery.history = history;
 
         if (!block) {
             Storage.updateBookProgress(pKey, {

@@ -17,17 +17,23 @@
  *     "_updatedAt": <epoch-ms>
  *   }
  *
- * Merge policy, per book and per field: the position (currentTime,
- * duration, percentage, lastRead) comes from the entry with the higher
- * `lastRead` — last-writer-wins without vector clocks, fine for a single
- * user across 2-3 devices. `maxTime` ("kuunneltu asti") takes the max and
- * `history` the union of both sides, so a bogus position written by one
- * device can always be recovered on another.
+ * Two paths:
+ *  - `init()` (once per app open / sign-in) downloads the remote file and
+ *    merges it with local per book and per field (`_merge`): the position
+ *    (currentTime, duration, percentage, lastRead) comes from the entry
+ *    with the higher `lastRead` — last-writer-wins without vector clocks,
+ *    fine for a single user across 2-3 devices; `maxTime` ("kuunneltu
+ *    asti") takes the max and `history` the union. The merged result is
+ *    written to local storage and uploaded if it differs from remote.
+ *  - `_upload()` (debounced / flush during use) does NOT merge: it
+ *    overwrites the remote file wholesale with this device's local books.
  *
- * Old app versions don't know maxTime/history and drop them when they
- * rewrite an entry (and then upload that). The devices running this
- * version still hold them locally, and this merge puts them back on the
- * next sync, so they survive.
+ * Why maxTime/history survive anyway: this version never drops them
+ * locally (Storage.updateBookProgress merges into the entry), and every
+ * local copy has been through `_merge` at app open. Old app versions
+ * (and any device's wholesale upload) can drop them from the remote file,
+ * but the next `init()` on a device running this version merges its local
+ * copy back in and re-uploads, so they are restored.
  */
 
 const Sync = {

@@ -47,9 +47,14 @@ Edistyminen tallennetaan `localStorage`en lähdekohtaisilla avaimilla
 (`drive:fileId`, `r2:bookId`), jotta sama nimi ei törmää eri lähteissä.
 Laitteiden välinen synkronointi (`js/sync.js`) käyttää Google Driven
 `appDataFolder`-kansiota ja on käytössä vasta kun Drive-lupa on myönnetty.
-Yhdistys kirjoittain ja kentittäin: kohta uusimman `lastRead`in mukaan,
-`maxTime` (kuunneltu asti) suurin, `history` yhdiste
-(`Storage.mergeProgressEntry`).
+Sovelluksen avauksessa (`Sync.init`) etä- ja paikallinen data yhdistetään
+kirjoittain ja kentittäin: kohta uusimman `lastRead`in mukaan, `maxTime`
+(kuunneltu asti) suurin, `history` yhdiste (`Storage.mergeProgressEntry`).
+Käytön aikaiset lataukset (`_upload`) korvaavat etätiedoston
+kokonaan paikallisella datalla ilman yhdistämistä. `maxTime`/`history`
+säilyvät silti: uusi versio ei pudota niitä paikallisesti, ja jos vanha
+versio tai kokonainen korvaus pudottaa ne etätiedostosta, seuraava
+`Sync.init` palauttaa ne paikallisesta kopiosta.
 
 ## R2-sisältö
 

@@ -75,7 +75,8 @@ Tallennettu kuuntelukohta ei siirry yli minuutin taaksepäin ilman omaa
 toimintoa (palkki, kelaus, luku, historia, paluu-painikkeet) — virheen tai
 verkkokatkon aiheuttama "0:00" ei siis korvaa oikeaa kohtaa. Muualta tullut
 siirto taaksepäin (esim. lukitusnäytön palkki) tallentuu, kun siitä on
-kuunneltu 2 minuuttia.
+kuunneltu 2 minuuttia. Jos pysäytät tai suljet sitä ennen, kohta jää
+paikkahistoriaan merkinnällä **keskeytynyt**.
 
 ## Arkisto
 
