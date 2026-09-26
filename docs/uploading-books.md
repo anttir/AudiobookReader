@@ -178,7 +178,7 @@ conditional read-modify-write — fetch with the object's ETag, put with
 retry the whole cycle on HTTP 412, up to 3 attempts, then fail loudly.
 This is the same approach the sibling Bookbeat project's
 `grab_book.py` uses. The worker's archive endpoint does the same
-(`onlyIf.etagMatches`, 3 retries, then 409), so the two never clobber
+(`onlyIf.etagMatches`, 3 attempts, then 409), so the two never clobber
 each other. A custom uploader that instead does a plain
 read-modify-write can still lose a concurrent write — last writer
 wins — so new uploaders should follow the conditional-write pattern

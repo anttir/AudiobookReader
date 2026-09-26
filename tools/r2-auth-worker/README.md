@@ -54,7 +54,7 @@ content; nothing here.
 sets / clears `archived` + `archivedAt` on that `index.json` entry.
 Caller must be in `ALLOWED_EMAILS` **and** `ADMIN_EMAILS` (403
 otherwise). The manifest is rewritten with an etag precondition (3
-retries, then 409), preserving its HTTP metadata. GET/HEAD on that path
+attempts, then 409), preserving its HTTP metadata. GET/HEAD on that path
 are ordinary R2 reads. Spec:
 [`docs/uploading-books.md`](../../docs/uploading-books.md#archiving--purging).
 

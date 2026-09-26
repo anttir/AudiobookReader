@@ -3,8 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <!-- Content-Security-Policy: strict allowlist of every origin the app
-         needs. Nothing else (e.g. bookbeat.com / *.akamaized.net) can be
-         contacted even if a manifest/playlist URL points there. Must stay
+         needs. fetch/XHR, hls.js, <img> and <audio> loads to anything else
+         (e.g. bookbeat.com / *.akamaized.net) are blocked. Exception: with
+         Safari's native HLS (no hls.js), segment loads are made by the
+         media stack and CSP enforcement there isn't guaranteed — so
+         playlists must only contain relative URIs (enforced by the upload
+         tooling). Must stay
          before any element that loads a resource. GitHub Pages can't set
          headers, hence <meta> (frame-ancestors/report-uri are not
          supported here). A custom R2 base URL (Settings) is blocked by
@@ -25,7 +29,6 @@
             https://cdn.jsdelivr.net/npm/epubjs@0.3.93/
             https://cdn.jsdelivr.net/npm/hls.js@1.5.20/;
         style-src 'self' 'unsafe-inline' blob:
-            https://accounts.google.com/gsi/style
             https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/;
         img-src 'self' blob: data:
             https://audiobookreader-r2.audiobooks.workers.dev

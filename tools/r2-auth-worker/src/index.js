@@ -459,7 +459,8 @@ async function handleArchive(request, url, env, ctx, cors) {
 
     const auth = await authenticateBearerOnly(request, url, env, ctx, cors);
     if (auth.response) return auth.response;
-    if (!parseList(env.ADMIN_EMAILS).includes(auth.email)) {
+    const admins = parseList(env.ADMIN_EMAILS).map((e) => e.toLowerCase());
+    if (!admins.includes(String(auth.email).toLowerCase())) {
         return json({ error: 'forbidden', email: auth.email }, 403, cors);
     }
 
