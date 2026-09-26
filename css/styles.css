@@ -706,11 +706,48 @@ body {
     box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
 }
 
+/* "Kuunneltu asti" marker: furthest point reached by continuous playback.
+   A small green notch above the track (the amber jump-back marker sits
+   on it), so the two never look alike. Clicking it continues there. */
+.listened-marker {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, calc(-100% - 9px));
+    width: 14px;
+    height: 10px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1;
+}
+
+.listened-marker::before {
+    content: '';
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid var(--success);
+    filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.4));
+}
+
+/* Row under the progress bar: jump-back, "Jatka kuunnellusta", history.
+   Takes no space when all of them are hidden. */
+.position-actions {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: -18px 0 18px;
+}
+
 .jump-back-btn {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: -18px 0 18px;
     padding: 6px 14px;
     border: 1px solid var(--warning);
     border-radius: 16px;
@@ -730,6 +767,102 @@ body {
     height: 16px;
     fill: var(--warning);
     flex-shrink: 0;
+}
+
+.continue-max-btn {
+    border-color: var(--success);
+}
+
+.continue-max-btn svg {
+    fill: var(--success);
+}
+
+.position-history-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.position-history-btn:hover,
+.position-history-btn[aria-expanded="true"] {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.position-history-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+}
+
+/* "Paikkahistoria" popover (overlays the controls; the player has no
+   room to grow). */
+.position-history {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(340px, calc(100vw - 32px));
+    max-height: 45vh;
+    overflow-y: auto;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-lg);
+    z-index: 50;
+}
+
+.position-history-header {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.position-history ul {
+    list-style: none;
+}
+
+.position-history li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background var(--transition);
+}
+
+.position-history li:hover {
+    background: var(--bg-tertiary);
+}
+
+.position-history .ph-when {
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.position-history .ph-chapter {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.position-history .ph-pos {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .progress-bar::-webkit-slider-thumb {

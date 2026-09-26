@@ -48,7 +48,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AudioBook Reader</title>
     <!-- Bump ?v= on every release so browsers fetch the new files. -->
-    <link rel="stylesheet" href="css/styles.css?v=20260926b">
+    <link rel="stylesheet" href="css/styles.css?v=20260926c">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a1a2e">
     <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
@@ -245,15 +245,30 @@
                 <span id="current-time">0:00</span>
                 <div class="progress-track">
                     <input type="range" id="progress-bar" class="progress-bar" min="0" max="100" value="0">
+                    <div id="listened-marker" class="listened-marker hidden" title="Kuunneltu asti"></div>
                     <div id="jump-back-marker" class="jump-back-marker hidden" title="Palaa edelliseen kuuntelukohtaan"></div>
                 </div>
                 <span id="duration">0:00</span>
             </div>
 
-            <button id="jump-back-btn" class="jump-back-btn hidden">
-                <svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>
-                <span>Palaa kohtaan <span id="jump-back-time">0:00</span></span>
-            </button>
+            <!-- Listening-position recovery: jump-back, "kuunneltu asti", history -->
+            <div class="position-actions">
+                <button id="jump-back-btn" class="jump-back-btn hidden">
+                    <svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>
+                    <span>Palaa kohtaan <span id="jump-back-time">0:00</span></span>
+                </button>
+                <button id="continue-max-btn" class="jump-back-btn continue-max-btn hidden">
+                    <svg viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>
+                    <span>Jatka kuunnellusta <span id="continue-max-time">0:00</span></span>
+                </button>
+                <button id="position-history-btn" class="position-history-btn hidden" title="Paikkahistoria" aria-label="Paikkahistoria" aria-expanded="false">
+                    <svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+                </button>
+                <div id="position-history" class="position-history hidden">
+                    <div class="position-history-header">Paikkahistoria</div>
+                    <ul id="position-history-list"></ul>
+                </div>
+            </div>
 
             <div class="audio-controls">
                 <button id="prev-track" class="control-btn">
@@ -426,19 +441,19 @@
 
     <!-- Scripts -->
     <!-- Bump ?v= on every release so browsers fetch the new files. -->
-    <script src="js/config.js?v=20260926b"></script>
-    <script src="js/storage.js?v=20260926b"></script>
-    <script src="js/auth.js?v=20260926b"></script>
-    <script src="js/sync.js?v=20260926b"></script>
-    <script src="js/providers/provider-base.js?v=20260926b"></script>
-    <script src="js/providers/drive-provider.js?v=20260926b"></script>
-    <script src="js/providers/r2-provider.js?v=20260926b"></script>
-    <script src="js/providers/registry.js?v=20260926b"></script>
-    <script src="js/cover-cache.js?v=20260926b"></script>
-    <script src="js/epub-cover.js?v=20260926b"></script>
-    <script src="js/pdfviewer.js?v=20260926b"></script>
-    <script src="js/epubviewer.js?v=20260926b"></script>
-    <script src="js/audioplayer.js?v=20260926b"></script>
-    <script src="js/app.js?v=20260926b"></script>
+    <script src="js/config.js?v=20260926c"></script>
+    <script src="js/storage.js?v=20260926c"></script>
+    <script src="js/auth.js?v=20260926c"></script>
+    <script src="js/sync.js?v=20260926c"></script>
+    <script src="js/providers/provider-base.js?v=20260926c"></script>
+    <script src="js/providers/drive-provider.js?v=20260926c"></script>
+    <script src="js/providers/r2-provider.js?v=20260926c"></script>
+    <script src="js/providers/registry.js?v=20260926c"></script>
+    <script src="js/cover-cache.js?v=20260926c"></script>
+    <script src="js/epub-cover.js?v=20260926c"></script>
+    <script src="js/pdfviewer.js?v=20260926c"></script>
+    <script src="js/epubviewer.js?v=20260926c"></script>
+    <script src="js/audioplayer.js?v=20260926c"></script>
+    <script src="js/app.js?v=20260926c"></script>
 </body>
 </html>

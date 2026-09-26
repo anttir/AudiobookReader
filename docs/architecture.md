@@ -47,6 +47,9 @@ Edistyminen tallennetaan `localStorage`en lähdekohtaisilla avaimilla
 (`drive:fileId`, `r2:bookId`), jotta sama nimi ei törmää eri lähteissä.
 Laitteiden välinen synkronointi (`js/sync.js`) käyttää Google Driven
 `appDataFolder`-kansiota ja on käytössä vasta kun Drive-lupa on myönnetty.
+Yhdistys kirjoittain ja kentittäin: kohta uusimman `lastRead`in mukaan,
+`maxTime` (kuunneltu asti) suurin, `history` yhdiste
+(`Storage.mergeProgressEntry`).
 
 ## R2-sisältö
 

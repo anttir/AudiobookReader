@@ -167,6 +167,90 @@ const Storage = {
     },
 
     /**
+     * Merge fields into an existing progress entry instead of replacing
+     * it (setBookProgress replaces). Used by the audio player so the
+     * listening-recovery fields (maxTime, history) survive every write.
+     * `touch: false` leaves lastRead alone — for writes that only carry
+     * recovery data and must not win the sync's last-writer-wins race
+     * for currentTime.
+     */
+    updateBookProgress(key, patch, { touch = true } = {}) {
+        const k = this._progressKey(key);
+        const allProgress = this.get(CONFIG.STORAGE_KEYS.bookProgress) || {};
+        const next = { ...(allProgress[k] || {}), ...patch };
+        if (touch) next.lastRead = Date.now();
+        allProgress[k] = next;
+        return this.set(CONFIG.STORAGE_KEYS.bookProgress, allProgress);
+    },
+
+    // --- Listening-position recovery (audio) -----------------------------
+    //
+    // Audio progress entries may carry, besides currentTime/duration/
+    // percentage/lastRead:
+    //   maxTime  — "Kuunneltu asti": furthest point reached by continuous
+    //              playback (seconds). Never decreases.
+    //   history  — [{ t, at, reason }] positions worth returning to (before
+    //              big jumps + periodic checkpoints), newest first.
+    // Both are optional so old entries (and old app versions, which drop
+    // unknown fields when they rewrite an entry) stay compatible.
+
+    HISTORY_MAX: 20,
+    // Entries closer than this (seconds of book time) are one place.
+    HISTORY_DEDUPE_S: 30,
+
+    /**
+     * Union of history lists: newest first, one entry per ~30 s of book
+     * time (the newest wins), capped at HISTORY_MAX. Pure.
+     */
+    mergeHistory(...lists) {
+        const all = [];
+        for (const list of lists) {
+            if (!Array.isArray(list)) continue;
+            for (const e of list) {
+                if (e && Number.isFinite(e.t) && Number.isFinite(e.at)) all.push(e);
+            }
+        }
+        all.sort((a, b) => (b.at - a.at) || (a.t - b.t));
+        const out = [];
+        for (const e of all) {
+            if (out.some(k => Math.abs(k.t - e.t) < this.HISTORY_DEDUPE_S)) continue;
+            out.push({ t: e.t, at: e.at, reason: e.reason });
+            if (out.length >= this.HISTORY_MAX) break;
+        }
+        return out;
+    },
+
+    /**
+     * Largest of the given values that is an actual number, or undefined
+     * when none is (missing data stays missing). Pure.
+     */
+    maxDefined(...values) {
+        const nums = values.filter(v => Number.isFinite(v));
+        return nums.length ? Math.max(...nums) : undefined;
+    },
+
+    /**
+     * Merge two versions of one book's progress (local vs. synced).
+     * Position fields (currentTime/duration/percentage/lastRead + anything
+     * else) come from the newer lastRead, as before; maxTime is the max of
+     * both and history the union — so an entry rewritten by an old app
+     * version (which drops those fields) can't erase them. Pure.
+     */
+    mergeProgressEntry(a, b) {
+        if (!a) return b;
+        if (!b) return a;
+        const newer = (a.lastRead || 0) >= (b.lastRead || 0) ? a : b;
+        const out = { ...newer };
+        const maxTime = this.maxDefined(a.maxTime, b.maxTime);
+        if (maxTime !== undefined) out.maxTime = maxTime;
+        else delete out.maxTime;
+        const history = this.mergeHistory(a.history, b.history);
+        if (history.length) out.history = history;
+        else delete out.history;
+        return out;
+    },
+
+    /**
      * Get all book progress, keyed by namespaced progress key.
      */
     getAllBookProgress() {

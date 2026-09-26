@@ -4,6 +4,15 @@ Merkittävät muutokset, uusin ensin. Tarkka historia: git- ja PR-loki.
 
 ## 2026-09
 
+- **Kuuntelukohdan palautus**: kirjakohtainen *kuunneltu asti* -kohta
+  (vihreä merkki + "Jatka kuunnellusta" -painike) ja *paikkahistoria*
+  (kohdat ennen isoja hyppyjä + 5 min välitallennukset), molemmat
+  synkronoituvat. Tallennus ei enää hyväksy ohimenevää 0:aa tai isoa
+  siirtoa taaksepäin ilman käyttäjän toimintoa (mm. HLS-virhepalautuksen
+  aikana tai ennen palautushypyn valmistumista). Synkronointi yhdistää
+  kentittäin (kohta: uusin voittaa; kuunneltu asti: suurin; historia:
+  yhdiste). Tallennus ~5 s välein toiston aikana. Ks.
+  [docs/usage.md](docs/usage.md#kuunneltu-asti-ja-paikkahistoria).
 - **Arkisto**: R2-kirjat voi arkistoida (ylläpitäjä) — kirjastossa
   *Aktiiviset | Arkistoidut* -valinta, arkistointipainike kortissa, rivillä
   ja soittimessa, "Äänet poistettu" -merkki kirjoille joiden äänet on

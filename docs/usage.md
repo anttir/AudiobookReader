@@ -56,6 +56,27 @@ kohdan, josta palasit — joten paluunkin voi perua. Merkki nollautuu, kun
 vaihdat tiedostoa tai kirjaa. Pienet siirtymät (alle minuutin, esim.
 30 sekunnin kelauspainikkeet) eivät aktivoi merkkiä.
 
+## Kuunneltu asti ja paikkahistoria
+
+Soitin muistaa kirjakohtaisesti (synkronoituu laitteiden välillä):
+
+- **Kuunneltu asti** — pisin kohta, johon on kuunneltu yhtäjaksoisesti.
+  Näkyy **vihreänä kolmiona** edistymispalkin yläpuolella. Etenee vain
+  normaalilla toistolla: hyppy eteenpäin hyväksytään vasta, kun siitä on
+  kuunneltu 2 minuuttia. Ei koskaan pienene.
+- **"Jatka kuunnellusta h:mm:ss"** -painike näkyy, kun olet yli 30 s
+  jäljessä tästä kohdasta — myös jos tallennettu kohta on kirjaa
+  avattaessa nollautunut (lisäksi ilmoitus *Jatka kohdasta …*).
+- **Paikkahistoria** (kellokuvake painikkeiden vieressä) — ~20 viimeisintä
+  kohtaa: paikka ennen jokaista isoa hyppyä + välitallennus 5 min
+  toiston välein. Rivillä kellonaika, luku ja kohta; napautus siirtää sinne.
+
+Tallennettu kuuntelukohta ei siirry yli minuutin taaksepäin ilman omaa
+toimintoa (palkki, kelaus, luku, historia, paluu-painikkeet) — virheen tai
+verkkokatkon aiheuttama "0:00" ei siis korvaa oikeaa kohtaa. Muualta tullut
+siirto taaksepäin (esim. lukitusnäytön palkki) tallentuu, kun siitä on
+kuunneltu 2 minuuttia.
+
 ## Arkisto
 
 R2-kirjaston työkalupalkissa on valinta **Aktiiviset | Arkistoidut**

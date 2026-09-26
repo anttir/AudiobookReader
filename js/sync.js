@@ -9,16 +9,25 @@
  *
  *   {
  *     "books": {
- *       "r2:<book-id>":  { currentTime, duration, percentage, lastRead },
+ *       "r2:<book-id>":  { currentTime, duration, percentage, lastRead,
+ *                          maxTime?, history? },
  *       "drive:<fileId>":{ ... },
  *       ...
  *     },
  *     "_updatedAt": <epoch-ms>
  *   }
  *
- * Merge policy: per book, the entry with the higher `lastRead` wins.
- * That makes it last-writer-wins on a per-book basis without needing
- * vector clocks — fine for a single user across 2-3 devices.
+ * Merge policy, per book and per field: the position (currentTime,
+ * duration, percentage, lastRead) comes from the entry with the higher
+ * `lastRead` — last-writer-wins without vector clocks, fine for a single
+ * user across 2-3 devices. `maxTime` ("kuunneltu asti") takes the max and
+ * `history` the union of both sides, so a bogus position written by one
+ * device can always be recovered on another.
+ *
+ * Old app versions don't know maxTime/history and drop them when they
+ * rewrite an entry (and then upload that). The devices running this
+ * version still hold them locally, and this merge puts them back on the
+ * next sync, so they survive.
  */
 
 const Sync = {
@@ -52,8 +61,8 @@ const Sync = {
 
     /**
      * Schedule a debounced upload. Called from AudioPlayer.saveProgress
-     * on every tick — debouncing keeps Drive write traffic at ~1 req /
-     * 30 s instead of ~4 req / s.
+     * (~every 5 s while playing) — debouncing keeps Drive write traffic
+     * down; pause / hide / unload push immediately via flushUpload.
      */
     scheduleUpload() {
         if (this._disabled) return;
@@ -129,8 +138,10 @@ const Sync = {
             const r = remote?.[k];
             if (!l) { out[k] = r; continue; }
             if (!r) { out[k] = l; continue; }
-            // Per-book last-writer-wins by lastRead timestamp
-            out[k] = (l.lastRead || 0) >= (r.lastRead || 0) ? l : r;
+            // Per field: position = last writer wins (lastRead); maxTime
+            // and position history only ever grow (see
+            // Storage.mergeProgressEntry).
+            out[k] = Storage.mergeProgressEntry(l, r);
         }
         return out;
     },
