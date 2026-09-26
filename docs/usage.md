@@ -66,10 +66,13 @@ Soitin muistaa kirjakohtaisesti (synkronoituu laitteiden välillä):
   kuunneltu 2 minuuttia. Ei koskaan pienene.
 - **"Jatka kuunnellusta h:mm:ss"** -painike näkyy, kun olet yli 30 s
   jäljessä tästä kohdasta — myös jos tallennettu kohta on kirjaa
-  avattaessa nollautunut (lisäksi ilmoitus *Jatka kohdasta …*).
+  avattaessa nollautunut (lisäksi ilmoitus *Jatka kohdasta …*). Ei näy,
+  jos kohta on tiedoston viimeisillä 5 sekunnilla (kirja kuunneltu loppuun).
 - **Paikkahistoria** (kellokuvake painikkeiden vieressä) — ~20 viimeisintä
   kohtaa: paikka ennen jokaista isoa hyppyä + välitallennus 5 min
   toiston välein. Rivillä kellonaika, luku ja kohta; napautus siirtää sinne.
+  Merkintä **tallennettu kohta** = aiemmin tallennettu kuuntelukohta, joka
+  korvautui tai jota ei saatu palautettua kirjaa avattaessa.
 
 Tallennettu kuuntelukohta ei siirry yli minuutin taaksepäin ilman omaa
 toimintoa (palkki, kelaus, luku, historia, paluu-painikkeet) — virheen tai
