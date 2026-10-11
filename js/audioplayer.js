@@ -85,20 +85,25 @@ const AudioPlayer = {
     // "Jatka kuunnellusta" never targets the very end of the file.
     END_MARGIN_S: 5,
 
-    // Output keep-alive. Between files (and during stalls, error recovery
-    // and auth reloads) the <audio> element is torn down and the browser
-    // stops its output stream for a moment. USB-C DACs with their own
-    // power-save / mute (Apple EarPods USB-C) then fade the next audio
-    // back in. An inaudible Web Audio tone keeps an output stream running
-    // across those gaps while the user is listening.
-    _keepAliveCtx: null,       // AudioContext; false = unavailable
+    // Output keep-alive. USB-C DACs with their own power-save / auto-mute
+    // (Apple EarPods USB-C) mute on digital silence and fade the next
+    // audio back in. Silence reaches them when the <audio> element is
+    // torn down (between files, stalls, error recovery, auth reloads) and
+    // from near-silent stretches in the audio itself (e.g. encoder
+    // priming at HLS segment starts), which Android's volume scaling
+    // rounds to zero. An inaudible Web Audio tone mixed into the output
+    // keeps the DAC from ever seeing zeros while the user is listening.
+    _keepAlive: null,          // { ctx, gain }; false = unavailable
     _keepAliveStopTimer: null,
-    // 20 Hz at -74 dBFS peak: far below hearing threshold at that
-    // frequency, but not digital silence — Chrome moves an all-zero Web
-    // Audio output to a fake sink after 30 s, and DACs may auto-mute on
-    // all-zero input.
+    _keepAliveSuspendTimer: null,
+    // 20 Hz at -50 dBFS peak: far below hearing threshold at that
+    // frequency (~78 dB SPL), yet loud enough to stay non-zero after
+    // volume scaling into a 16-bit output. Not digital silence either way:
+    // Chrome moves an all-zero Web Audio output to a fake sink after 30 s.
     KEEPALIVE_HZ: 20,
-    KEEPALIVE_GAIN: 0.0002,
+    KEEPALIVE_GAIN: 0.003,
+    // Fade time constant (s) on start/stop, so the tone never steps.
+    KEEPALIVE_FADE_S: 0.02,
     // Nothing playing this long (next file loading — Drive downloads it
     // whole first — or a stall) releases the output.
     KEEPALIVE_IDLE_MS: 60000,
@@ -1666,20 +1671,20 @@ const AudioPlayer = {
     },
 
     /**
-     * Run the keep-alive tone (see _keepAliveCtx). Called from play /
+     * Run the keep-alive tone (see _keepAlive). Called from play /
      * playing, after the user has interacted with the page, so the
      * context may start. Skipped on iOS: separate audio-session handling
      * there, and the DAC problem is an Android one.
      */
     _startKeepAlive() {
         this._cancelKeepAliveStop();
-        if (this._keepAliveCtx === false) return;
-        if (!this._keepAliveCtx) {
+        if (this._keepAlive === false) return;
+        if (!this._keepAlive) {
             const Ctx = window.AudioContext || window.webkitAudioContext;
             const iOS = /iP(hone|ad|od)/.test(navigator.userAgent)
                 || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
             if (!Ctx || iOS) {
-                this._keepAliveCtx = false;
+                this._keepAlive = false;
                 return;
             }
             try {
@@ -1687,29 +1692,40 @@ const AudioPlayer = {
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.frequency.value = this.KEEPALIVE_HZ;
-                gain.gain.value = this.KEEPALIVE_GAIN;
+                gain.gain.value = 0;
                 osc.connect(gain).connect(ctx.destination);
                 osc.start();
-                this._keepAliveCtx = ctx;
+                this._keepAlive = { ctx, gain };
             } catch (e) {
                 console.warn('Audio keep-alive unavailable:', e);
-                this._keepAliveCtx = false;
+                this._keepAlive = false;
                 return;
             }
         }
+        const { ctx, gain } = this._keepAlive;
+        clearTimeout(this._keepAliveSuspendTimer);
         // Unconditional: resume/suspend apply in call order, so a suspend
         // still in flight can't leave the output stopped (or vice versa).
-        this._keepAliveCtx.resume().catch(() => { /* not allowed yet */ });
+        ctx.resume().catch(() => { /* not allowed yet */ });
+        // Each fade continues from the current value — no steps.
+        gain.gain.setTargetAtTime(this.KEEPALIVE_GAIN, ctx.currentTime, this.KEEPALIVE_FADE_S);
     },
 
+    /** Fade the tone out, then suspend the context (releases the output). */
     _stopKeepAlive() {
         this._cancelKeepAliveStop();
-        if (this._keepAliveCtx) this._keepAliveCtx.suspend().catch(() => {});
+        if (!this._keepAlive) return;
+        const { ctx, gain } = this._keepAlive;
+        gain.gain.setTargetAtTime(0, ctx.currentTime, this.KEEPALIVE_FADE_S);
+        clearTimeout(this._keepAliveSuspendTimer);
+        this._keepAliveSuspendTimer = setTimeout(() => {
+            ctx.suspend().catch(() => {});
+        }, this.KEEPALIVE_FADE_S * 5000);
     },
 
     /** Release the output after KEEPALIVE_IDLE_MS unless playback resumes. */
     _scheduleKeepAliveStop() {
-        if (!this._keepAliveCtx || this._keepAliveStopTimer) return;
+        if (!this._keepAlive || this._keepAliveStopTimer) return;
         this._keepAliveStopTimer = setTimeout(() => {
             this._keepAliveStopTimer = null;
             this._stopKeepAlive();
