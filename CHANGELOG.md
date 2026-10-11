@@ -4,6 +4,14 @@ Merkittävät muutokset, uusin ensin. Tarkka historia: git- ja PR-loki.
 
 ## 2026-10
 
+- **USB-C-kuulokkeiden herätys asetuksiin, oletuksena 10 Hz / −30 dB**:
+  ryhmä *USB-C-kuulokkeet* on sekä *Asetuksissa* että toiston aikana
+  avattavissa *Lukuasetuksissa* (taso Pois / −40 / −30 / −20 dB, taajuus
+  10 Hz / 20 Hz / 20 kHz); soittimen pikavalinta poistettu. EarPods USB-C:llä
+  −30 dB riitti, mutta 20 Hz surisi (kuulokkeen särökomponentit 40/60/80 Hz);
+  10 Hz siirtää ne oktaavin alemmas, 20 kHz ei liikuta kalvoa juuri lainkaan.
+  Päällä oletuksena: selain ei voi tunnistaa kytkettyjä kuulokkeita ilman
+  mikrofonilupaa, ja kuulumaton signaali ei haittaa muilla laitteilla.
 - **USB-C-herätys säädettäväksi**: soittimessa nopeuden vieressä valinta
   *Pois / −40 / −30 / −20 dB* (oletus −30). Kuulokkeiden mykistysraja
   vaihtelee adapterikohtaisesti, eikä kiinteä −40 dBFS riittänyt EarPods

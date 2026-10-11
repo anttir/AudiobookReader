@@ -96,15 +96,17 @@ const AudioPlayer = {
     _keepAlive: null,          // { ctx, gain }; false = unavailable
     _keepAliveStopTimer: null,
     _keepAliveSuspendTimer: null,
-    // 20 Hz: far below hearing threshold at that frequency (~78 dB SPL;
-    // earbuds reproduce little of it). The level (dBFS peak) is the
-    // user's choice in the player ("USB-C-herätys"): the silence threshold
-    // differs per adapter (-74 and -50 dBFS fixed levels were not enough
-    // for Apple EarPods USB-C). Max -20: louder would clip loud peaks.
-    // Never digital silence: Chrome moves an all-zero Web Audio output to
-    // a fake sink after 30 s.
-    KEEPALIVE_HZ: 20,
+    // Level and frequency are settings ("USB-C-kuulokkeet" in Asetukset and
+    // Lukuasetukset): the silence threshold differs per adapter. Apple
+    // EarPods USB-C needed -30 dBFS (-40 was not enough); max -20 leaves
+    // headroom for loud peaks. 20 Hz at -30 dBFS buzzed audibly — the
+    // earbud's distortion harmonics (40, 60, 80 Hz…), not the tone itself.
+    // 10 Hz moves them an octave down where hearing is ~20 dB less
+    // sensitive; 20 kHz barely moves the driver at all. Never digital
+    // silence: Chrome moves an all-zero Web Audio output to a fake sink
+    // after 30 s.
     KEEPALIVE_DEFAULT_DB: -30,
+    KEEPALIVE_DEFAULT_HZ: 10,
     // Fade time constant (s) on start/stop, so the tone never steps.
     KEEPALIVE_FADE_S: 0.02,
     // Nothing playing this long (next file loading — Drive downloads it
@@ -215,11 +217,14 @@ const AudioPlayer = {
         });
 
         // Playback speed
-        const keepAliveSel = document.getElementById('keepalive-level');
-        const keepAliveDb = this._keepAliveDb();
-        keepAliveSel.value = keepAliveDb === null ? 'off' : String(keepAliveDb);
-        keepAliveSel.addEventListener('change', (e) => this.setKeepAliveLevel(e.target.value));
-        document.getElementById('keepalive-control').classList.toggle('hidden', !this._keepAliveSupported());
+        // "USB-C-kuulokkeet" (in Asetukset and Lukuasetukset, kept in sync)
+        document.querySelectorAll('.ka-level').forEach(sel =>
+            sel.addEventListener('change', () => this.setKeepAlive({ db: sel.value })));
+        document.querySelectorAll('.ka-hz').forEach(sel =>
+            sel.addEventListener('change', () => this.setKeepAlive({ hz: sel.value })));
+        document.querySelectorAll('.keepalive-settings').forEach(el =>
+            el.classList.toggle('hidden', !this._keepAliveSupported()));
+        this._renderKeepAliveControls();
 
         document.getElementById('playback-speed').addEventListener('change', (e) => {
             this.setPlaybackSpeed(parseFloat(e.target.value));
@@ -1693,19 +1698,44 @@ const AudioPlayer = {
         return !iOS && !!(window.AudioContext || window.webkitAudioContext);
     },
 
-    /** Player's "USB-C-herätys" select: 'off' or a dBFS level. Applies at once. */
-    setKeepAliveLevel(value) {
-        Storage.setSettings({ keepAliveDb: value === 'off' ? 'off' : Number(value) });
-        if (value === 'off') this._stopKeepAlive();
+    /** Chosen keep-alive frequency (Hz). */
+    _keepAliveHz() {
+        const v = Storage.getSettings().keepAliveHz;
+        return Number.isFinite(v) ? v : this.KEEPALIVE_DEFAULT_HZ;
+    },
+
+    /**
+     * "USB-C-kuulokkeet" settings: db = 'off' or a dBFS level, hz = tone
+     * frequency. Applies at once, also mid-playback.
+     */
+    setKeepAlive({ db, hz } = {}) {
+        const patch = {};
+        if (db !== undefined) patch.keepAliveDb = db === 'off' ? 'off' : Number(db);
+        if (hz !== undefined) patch.keepAliveHz = Number(hz);
+        Storage.setSettings(patch);
+        this._renderKeepAliveControls();
+        if (this._keepAliveDb() === null) this._stopKeepAlive();
         else if (!this.audio.paused) this._startKeepAlive();
         if (typeof AudioDiagnostics !== 'undefined') AudioDiagnostics.renderLive();
+    },
+
+    _renderKeepAliveControls() {
+        const db = this._keepAliveDb();
+        document.querySelectorAll('.ka-level').forEach(sel => {
+            sel.value = db === null ? 'off' : String(db);
+        });
+        document.querySelectorAll('.ka-hz').forEach(sel => {
+            sel.value = String(this._keepAliveHz());
+            sel.disabled = db === null;
+        });
     },
 
     /** Keep-alive state for the diagnostics counter. */
     keepAliveStatus() {
         const db = this._keepAliveDb();
         if (db === null) return 'pois';
-        const level = `${String(db).replace('-', '−')} dB`;
+        const hz = this._keepAliveHz();
+        const level = `${String(db).replace('-', '−')} dB, ${hz >= 1000 ? `${hz / 1000} kHz` : `${hz} Hz`}`;
         if (this._keepAlive === false) return 'ei tuettu';
         if (!this._keepAlive) return `${level}, ei käynnissä`;
         const state = this._keepAlive.ctx.state;
@@ -1732,19 +1762,21 @@ const AudioPlayer = {
                 const ctx = new Ctx({ latencyHint: 'playback' });
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
-                osc.frequency.value = this.KEEPALIVE_HZ;
                 gain.gain.value = 0;
                 osc.connect(gain).connect(ctx.destination);
                 osc.start();
-                this._keepAlive = { ctx, gain };
+                this._keepAlive = { ctx, osc, gain };
             } catch (e) {
                 console.warn('Audio keep-alive unavailable:', e);
                 this._keepAlive = false;
                 return;
             }
         }
-        const { ctx, gain } = this._keepAlive;
+        const { ctx, osc, gain } = this._keepAlive;
         clearTimeout(this._keepAliveSuspendTimer);
+        // Phase-continuous, so a change while playing doesn't click. Kept
+        // below Nyquist for low-rate outputs.
+        osc.frequency.setValueAtTime(Math.min(this._keepAliveHz(), ctx.sampleRate * 0.45), ctx.currentTime);
         // Unconditional: resume/suspend apply in call order, so a suspend
         // still in flight can't leave the output stopped (or vice versa).
         ctx.resume().catch(() => { /* not allowed yet */ });
