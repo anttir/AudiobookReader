@@ -96,12 +96,13 @@ const AudioPlayer = {
     _keepAlive: null,          // { ctx, gain }; false = unavailable
     _keepAliveStopTimer: null,
     _keepAliveSuspendTimer: null,
-    // 20 Hz at -50 dBFS peak: far below hearing threshold at that
-    // frequency (~78 dB SPL), yet loud enough to stay non-zero after
-    // volume scaling into a 16-bit output. Not digital silence either way:
-    // Chrome moves an all-zero Web Audio output to a fake sink after 30 s.
+    // 20 Hz at -40 dBFS peak: still far below hearing threshold at that
+    // frequency (~78 dB SPL; earbuds reproduce little of it), and well
+    // above what the DAC treats as silence after Android's volume scaling.
+    // -74 and then -50 dBFS were not enough. Not digital silence either
+    // way: Chrome moves an all-zero Web Audio output to a fake sink after 30 s.
     KEEPALIVE_HZ: 20,
-    KEEPALIVE_GAIN: 0.003,
+    KEEPALIVE_GAIN: 0.01,
     // Fade time constant (s) on start/stop, so the tone never steps.
     KEEPALIVE_FADE_S: 0.02,
     // Nothing playing this long (next file loading — Drive downloads it

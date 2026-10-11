@@ -4,6 +4,14 @@ Merkittävät muutokset, uusin ensin. Tarkka historia: git- ja PR-loki.
 
 ## 2026-10
 
+- **Äänidiagnostiikka** (*Asetukset → Tietoja*, oletuksena pois): mittaa
+  puhelimella toistettavasta äänestä lyhyet katkot (ja ovatko ne
+  HLS-segmenttien saumoissa), digitaalisen hiljaisuuden ja
+  puskurointipysähdykset. Toisto ei muutu (ääni luetaan
+  `captureStream()`-kopiosta). Tulos säilyy kirjasta poistuttaessa, ja
+  soittimessa näkyy laskuri mittauksen ollessa päällä.
+- Taustasignaali nostettu −50 → −40 dBFS (edelleen 20 Hz); −50 dBFS
+  vähensi häivytyksiä mutta ei poistanut niitä.
 - **Versio ja päivitykset**: *Asetukset → Tietoja* näyttää käytössä
   olevan version ja tarkistaa, onko julkaistu uudempi (*Päivitä
   uusimpaan*). Sovellus tarkistaa saman myös käynnistyessä ja palatessaan
