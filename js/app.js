@@ -70,6 +70,7 @@ const App = {
         PDFViewer.init();
         EPUBViewer.init();
         AudioPlayer.init();
+        AudioDiagnostics.init(AudioPlayer.audio);
 
         // Initialize authentication
         Auth.init((isLoggedIn, user) => this.onAuthChange(isLoggedIn, user));
@@ -193,6 +194,14 @@ const App = {
         });
 
         document.getElementById('update-btn').addEventListener('click', () => location.reload());
+        document.getElementById('diag-enabled').addEventListener('change', (e) => {
+            AudioDiagnostics.setEnabled(e.target.checked);
+            this.renderDiagnostics();
+        });
+        document.getElementById('diag-reset').addEventListener('click', () => {
+            AudioDiagnostics.reset();
+            this.renderDiagnostics();
+        });
 
         // Logout
         document.getElementById('logout-btn').addEventListener('click', () => {
@@ -1939,6 +1948,7 @@ const App = {
         const statusEl = document.getElementById('update-status');
         const btn = document.getElementById('update-btn');
         document.getElementById('app-version').textContent = this.VERSION || 'tuntematon';
+        this.renderDiagnostics();
         btn.classList.add('hidden');
         statusEl.textContent = 'Tarkistetaan päivityksiä…';
         const latest = await this.fetchLatestVersion();
@@ -1950,6 +1960,17 @@ const App = {
             statusEl.textContent = `Uusi versio saatavilla: ${latest}`;
             btn.classList.remove('hidden');
         }
+    },
+
+    /** Settings → Tietoja → Äänidiagnostiikka: toggle + results. */
+    renderDiagnostics() {
+        const on = AudioDiagnostics.enabled;
+        const hasData = AudioDiagnostics.stats.listenedS > 0 || AudioDiagnostics.stats.events.length > 0;
+        document.getElementById('diag-enabled').checked = on;
+        const summary = document.getElementById('diag-summary');
+        summary.textContent = AudioDiagnostics.summaryText();
+        summary.classList.toggle('hidden', !on && !hasData);
+        document.getElementById('diag-reset').classList.toggle('hidden', !hasData);
     },
 
     /**

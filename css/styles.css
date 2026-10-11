@@ -1992,3 +1992,32 @@ body {
 .book-card.folder-card .book-cover {
     background: linear-gradient(135deg, #b87f1e, #f39c12);
 }
+
+/* Audio diagnostics (Asetukset → Tietoja, player counter) */
+.diag-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.diag-summary {
+    white-space: pre-wrap;
+    font-family: inherit;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    margin: 0 0 8px;
+    padding: 8px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+}
+
+.diag-live {
+    margin-top: 4px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}

@@ -135,9 +135,14 @@ digitaalisesta hiljaisuudesta ja häivyttävät seuraavan äänen sisään.
 Soitin sekoittaa toiston ajan ääneen kuulumattoman 20 Hz:n signaalin, ettei
 näin käy. Tarkista ensin, että käytössä on uusin versio (*Asetukset →
 Tietoja*). Jos häivytys toistuu tasaisesti ~10 s välein R2-kirjassa, syy on
-todennäköisesti kirjan HLS-segmenteissä: aja
-[`check-segment-gaps.py`](../tools/upload-to-r2/check-segment-gaps.py)
-kirjan segmenteille (ks. [uploading-books.md](uploading-books.md#common-mistakes)).
+todennäköisesti kirjan HLS-segmenteissä. Selvitä puhelimella: *Asetukset →
+Tietoja → Äänidiagnostiikka* päälle, kuuntele kirjaa muutama minuutti ja
+katso tulos samasta kohdasta. Jos lyhyet katkot ovat lähes kaikki
+*segmenttisaumoissa*, kirjan segmentit on koodattu erikseen ja kirja pitää
+koodata uudelleen yhtenäisenä (koneella:
+[`check-segment-gaps.py`](../tools/upload-to-r2/check-segment-gaps.py), ks.
+[uploading-books.md](uploading-books.md#common-mistakes)). Paljon
+*digitaalista hiljaisuutta* = kirjan tauot on leikattu nollaan.
 Tauon jälkeen jatkaessa lyhyt häivytys on normaalia: lähtö suljetaan tauon
 ajaksi akun säästämiseksi.
 
