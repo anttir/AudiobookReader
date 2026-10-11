@@ -245,6 +245,18 @@ segments/000001.ts
 - Forgetting `#EXT-X-ENDLIST` (player thinks it's a live stream and never
   seeks).
 - Wrong `Content-Type` on the `.ts` upload (see table above).
+- Segments encoded one at a time instead of cut from one continuous
+  encode. Each then starts with encoder priming, which decodes as ~20–50 ms
+  of near-silence at every boundary: a tiny gap every ~10 s, heard as a
+  fade-in on USB-C DACs that auto-mute on silence (Apple EarPods USB-C).
+  The player can't remove it. Check before uploading:
+
+  ```bash
+  python tools/upload-to-r2/check-segment-gaps.py --segments-dir /path/to/segments
+  ```
+
+  `DROPOUTS` means re-encode the book as one continuous stream and
+  re-segment it (e.g. `ffmpeg -f hls -hls_time 10`).
 
 ### Chapter markers (optional)
 

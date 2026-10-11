@@ -111,6 +111,16 @@ What the script does:
 After the run, the book shows up in the app the next time you load the R2
 library (and the in-app "Päivitä" / refresh button).
 
+**Check segment boundaries first** (needs only Python + ffmpeg):
+
+```bash
+python check-segment-gaps.py --segments-dir /path/to/segments
+```
+
+`OK` = segments join seamlessly. `DROPOUTS` = they were encoded one at a
+time and every boundary has a ~20–50 ms near-silent hole; see
+[`docs/uploading-books.md`](../../docs/uploading-books.md#common-mistakes).
+
 ## Resulting bucket layout
 
 ```

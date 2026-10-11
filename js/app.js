@@ -46,6 +46,13 @@ const App = {
     currentPartIndex: 0,    // Current part index in multi-part book
     currentMode: 'read',    // 'read' or 'listen'
     _archivePending: new Set(),  // book ids with an archive request in flight
+    // Release version: the ?v= cache-bust on the <script> tags in
+    // index.html (bumped on every release), read from this script's URL.
+    VERSION: new URL(document.currentScript?.src || location.href).searchParams.get('v'),
+    // Background check for a newer deployed version at most this often.
+    UPDATE_CHECK_MS: 30 * 60 * 1000,
+    _lastUpdateCheck: 0,
+    _updateOffered: null,        // version already offered in a toast
 
     /**
      * Initialize the application
@@ -69,6 +76,13 @@ const App = {
 
         // Setup event listeners
         this.setupEventListeners();
+
+        // Offer a reload when a newer version is deployed — also when the
+        // installed app comes back after days in the background.
+        this.checkForUpdate();
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') this.checkForUpdate();
+        });
 
         // Hide loading screen after a short delay
         setTimeout(() => {
@@ -177,6 +191,8 @@ const App = {
         document.getElementById('user-avatar').addEventListener('click', () => {
             this.openSettings();
         });
+
+        document.getElementById('update-btn').addEventListener('click', () => location.reload());
 
         // Logout
         document.getElementById('logout-btn').addEventListener('click', () => {
@@ -1884,7 +1900,56 @@ const App = {
             }
         }
 
+        this.renderAbout();
         this.openModal('settings-modal');
+    },
+
+    /**
+     * Version in the deployed index.html, bypassing the HTTP cache
+     * (GitHub Pages lets browsers reuse it for 10 min). Null if unknown.
+     */
+    async fetchLatestVersion() {
+        try {
+            const res = await fetch('index.html', { cache: 'no-store' });
+            if (!res.ok) return null;
+            return (await res.text()).match(/js\/app\.js\?v=([\w.-]+)/)?.[1] || null;
+        } catch {
+            return null;
+        }
+    },
+
+    /**
+     * Background update check (throttled): toast with a reload action when
+     * the deployed version differs from the running one.
+     */
+    async checkForUpdate() {
+        if (!this.VERSION || Date.now() - this._lastUpdateCheck < this.UPDATE_CHECK_MS) return;
+        this._lastUpdateCheck = Date.now();
+        const latest = await this.fetchLatestVersion();
+        if (!latest || latest === this.VERSION || latest === this._updateOffered) return;
+        this._updateOffered = latest;
+        this.showToast(`Uusi versio saatavilla (${latest})`, 'info', {
+            label: 'Päivitä',
+            onClick: () => location.reload(),
+        });
+    },
+
+    /** Settings → Tietoja: running version, checked against the deployed one. */
+    async renderAbout() {
+        const statusEl = document.getElementById('update-status');
+        const btn = document.getElementById('update-btn');
+        document.getElementById('app-version').textContent = this.VERSION || 'tuntematon';
+        btn.classList.add('hidden');
+        statusEl.textContent = 'Tarkistetaan päivityksiä…';
+        const latest = await this.fetchLatestVersion();
+        if (!latest) {
+            statusEl.textContent = 'Päivitysten tarkistus epäonnistui.';
+        } else if (latest === this.VERSION) {
+            statusEl.textContent = 'Käytössä on uusin versio.';
+        } else {
+            statusEl.textContent = `Uusi versio saatavilla: ${latest}`;
+            btn.classList.remove('hidden');
+        }
     },
 
     /**

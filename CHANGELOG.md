@@ -4,13 +4,24 @@ Merkittävät muutokset, uusin ensin. Tarkka historia: git- ja PR-loki.
 
 ## 2026-10
 
-- **Ei häivytystä tiedostojen välissä USB-C-DAC:lla**: soitin pitää
-  äänilähdön auki koko kuuntelun ajan (kuulumaton 20 Hz / −74 dBFS
-  Web Audio -signaali), joten tiedostonvaihto, puskurointikatko tai
-  virhepalautus ei enää sulje äänikanavaa hetkeksi. Ennen tätä esim.
-  Apple EarPods (USB-C) -nappien oma DAC meni välissä lepoon ja häivytti
-  seuraavan kohdan alun sisään. Lähtö vapautetaan heti tauolla, kirjan
-  lopussa ja 60 s jälkeen jos toisto ei jatku. Ei käytössä iOS:llä.
+- **Versio ja päivitykset**: *Asetukset → Tietoja* näyttää käytössä
+  olevan version ja tarkistaa, onko julkaistu uudempi (*Päivitä
+  uusimpaan*). Sovellus tarkistaa saman myös käynnistyessä ja palatessaan
+  taustalta (enintään 30 min välein) ja tarjoaa päivitystä ilmoituksella.
+- **USB-C-DAC:n sisäänhäivytys (Apple EarPods USB-C)**: soitin sekoittaa
+  toiston ajan ääneen kuulumattoman 20 Hz:n signaalin, jotta kuulokkeiden
+  DAC ei koskaan näe digitaalista hiljaisuutta eikä mykisty ja häivytä
+  seuraavaa ääntä sisään. Hiljaisuutta syntyy, kun äänikanava katkeaa
+  (tiedostonvaihto, puskurointikatko, virhepalautus) ja kun äänessä itsessään
+  on lähes hiljaisia kohtia, jotka Androidin äänenvoimakkuuden skaalaus
+  pyöristää nollaksi. Taso nostettiin ensimmäisestä versiosta (−74 →
+  −50 dBFS), koska −74 dBFS saattoi pyöristyä nollaan; alku ja loppu
+  liukuvat. Lähtö vapautetaan tauolla, kirjan lopussa ja 60 s jälkeen jos
+  toisto ei jatku. Ei käytössä iOS:llä.
+- **`tools/upload-to-r2/check-segment-gaps.py`**: tarkistaa, onko HLS-kirjan
+  segmenttien saumoissa katkoja (segmentit koodattu erikseen → ~20–50 ms
+  lähes hiljainen kohta ~10 s välein). Ks.
+  [docs/uploading-books.md](docs/uploading-books.md#common-mistakes).
 
 ## 2026-09
 

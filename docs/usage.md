@@ -129,12 +129,22 @@ Varmista että tilisi on listalla (omassa kopiossa: Workerin `ALLOWED_EMAILS`).
 ### Ääni ei toistu
 - Jotkin selaimet vaativat käyttäjän interaktion ennen äänentoistoa — paina play.
 
-### Ääni häivyttyy sisään tiedostonvaihdon tai katkon jälkeen (USB-C-kuulokkeet)
-Kuulokkeet, joissa on oma DAC (esim. Apple EarPods USB-C), menevät lepoon
-kun äänilähtö katkeaa hetkeksi, ja häivyttävät seuraavan äänen sisään.
-Soitin pitää lähdön auki toiston ajan kuulumattomalla signaalilla, joten
-tätä ei pitäisi enää tapahtua. Tauon jälkeen jatkaessa lyhyt häivytys on
-normaalia: lähtö suljetaan tauon ajaksi akun säästämiseksi.
+### Ääni häivyttyy sisään toistuvasti (USB-C-kuulokkeet)
+Kuulokkeet, joissa on oma DAC (esim. Apple EarPods USB-C), mykistyvät
+digitaalisesta hiljaisuudesta ja häivyttävät seuraavan äänen sisään.
+Soitin sekoittaa toiston ajan ääneen kuulumattoman 20 Hz:n signaalin, ettei
+näin käy. Tarkista ensin, että käytössä on uusin versio (*Asetukset →
+Tietoja*). Jos häivytys toistuu tasaisesti ~10 s välein R2-kirjassa, syy on
+todennäköisesti kirjan HLS-segmenteissä: aja
+[`check-segment-gaps.py`](../tools/upload-to-r2/check-segment-gaps.py)
+kirjan segmenteille (ks. [uploading-books.md](uploading-books.md#common-mistakes)).
+Tauon jälkeen jatkaessa lyhyt häivytys on normaalia: lähtö suljetaan tauon
+ajaksi akun säästämiseksi.
+
+### Onko käytössä uusin versio?
+*Asetukset → Tietoja* näyttää version ja kertoo, onko julkaistu uudempi;
+*Päivitä uusimpaan* lataa sen. Sovellus ilmoittaa uudesta versiosta myös
+itse käynnistyessä ja taustalta palatessa.
 
 ### Edistyminen ei tallennu
 - Salli `localStorage`. Incognito/yksityinen selaus ei säilytä dataa.
