@@ -976,6 +976,8 @@ body {
 
 .speed-control {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
     gap: 8px;
     color: var(--text-secondary);
@@ -2020,4 +2022,15 @@ body {
     margin-top: 4px;
     font-size: 0.75rem;
     color: var(--text-secondary);
+}
+
+.keepalive-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 8px;
+}
+
+.keepalive-control.hidden {
+    display: none;
 }

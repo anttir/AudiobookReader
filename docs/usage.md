@@ -131,10 +131,12 @@ Varmista että tilisi on listalla (omassa kopiossa: Workerin `ALLOWED_EMAILS`).
 
 ### Ääni häivyttyy sisään toistuvasti (USB-C-kuulokkeet)
 Kuulokkeet, joissa on oma DAC (esim. Apple EarPods USB-C), mykistyvät
-digitaalisesta hiljaisuudesta ja häivyttävät seuraavan äänen sisään.
-Soitin sekoittaa toiston ajan ääneen kuulumattoman 20 Hz:n signaalin, ettei
-näin käy. Tarkista ensin, että käytössä on uusin versio (*Asetukset →
-Tietoja*). Jos häivytys toistuu tasaisesti ~10 s välein R2-kirjassa, syy on
+kirjan hiljaisissa kohdissa ja häivyttävät seuraavan äänen sisään. Soitin
+sekoittaa toiston ajan ääneen kuulumattoman 20 Hz:n signaalin, ettei näin
+käy. Sen voimakkuuden voi valita soittimessa nopeuden vierestä
+(*USB-C-herätys*: Pois / −40 / −30 / −20 dB, oletus −30): jos häivytyksiä
+vielä tulee, kokeile −20 dB. Tarkista myös, että käytössä on uusin versio
+(*Asetukset → Tietoja*). Jos häivytys toistuu tasaisesti ~10 s välein R2-kirjassa, syy on
 todennäköisesti kirjan HLS-segmenteissä. Selvitä puhelimella: *Asetukset →
 Tietoja → Äänidiagnostiikka* päälle, kuuntele kirjaa muutama minuutti ja
 katso tulos samasta kohdasta. Jos lyhyet katkot ovat lähes kaikki
