@@ -2,6 +2,16 @@
 
 Merkittävät muutokset, uusin ensin. Tarkka historia: git- ja PR-loki.
 
+## 2026-10
+
+- **Ei häivytystä tiedostojen välissä USB-C-DAC:lla**: soitin pitää
+  äänilähdön auki koko kuuntelun ajan (kuulumaton 20 Hz / −74 dBFS
+  Web Audio -signaali), joten tiedostonvaihto, puskurointikatko tai
+  virhepalautus ei enää sulje äänikanavaa hetkeksi. Ennen tätä esim.
+  Apple EarPods (USB-C) -nappien oma DAC meni välissä lepoon ja häivytti
+  seuraavan kohdan alun sisään. Lähtö vapautetaan heti tauolla, kirjan
+  lopussa ja 60 s jälkeen jos toisto ei jatku. Ei käytössä iOS:llä.
+
 ## 2026-09
 
 - **Kuuntelukohdan palautus**: kirjakohtainen *kuunneltu asti* -kohta

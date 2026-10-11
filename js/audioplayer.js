@@ -85,6 +85,24 @@ const AudioPlayer = {
     // "Jatka kuunnellusta" never targets the very end of the file.
     END_MARGIN_S: 5,
 
+    // Output keep-alive. Between files (and during stalls, error recovery
+    // and auth reloads) the <audio> element is torn down and the browser
+    // stops its output stream for a moment. USB-C DACs with their own
+    // power-save / mute (Apple EarPods USB-C) then fade the next audio
+    // back in. An inaudible Web Audio tone keeps an output stream running
+    // across those gaps while the user is listening.
+    _keepAliveCtx: null,       // AudioContext; false = unavailable
+    _keepAliveStopTimer: null,
+    // 20 Hz at -74 dBFS peak: far below hearing threshold at that
+    // frequency, but not digital silence — Chrome moves an all-zero Web
+    // Audio output to a fake sink after 30 s, and DACs may auto-mute on
+    // all-zero input.
+    KEEPALIVE_HZ: 20,
+    KEEPALIVE_GAIN: 0.0002,
+    // Nothing playing this long (next file loading — Drive downloads it
+    // whole first — or a stall) releases the output.
+    KEEPALIVE_IDLE_MS: 60000,
+
     // hls.js CDN — pinned version. Update intentionally; do not float to @latest.
     HLS_JS_SRC: 'https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js',
 
@@ -149,6 +167,11 @@ const AudioPlayer = {
         // loading rather than waiting for the timer to catch up.
         this.audio.addEventListener('waiting', () => this._nudgeBuffer('waiting'));
         this.audio.addEventListener('stalled', () => this._nudgeBuffer('stalled'));
+
+        // Element not producing audio (stall, teardown between files):
+        // hold the keep-alive output only for a bounded time.
+        this.audio.addEventListener('waiting', () => this._scheduleKeepAliveStop());
+        this.audio.addEventListener('emptied', () => this._scheduleKeepAliveStop());
 
         // Control buttons
         document.getElementById('play-pause').addEventListener('click', () => this.togglePlayPause());
@@ -823,6 +846,7 @@ const AudioPlayer = {
         this.currentIndex = 0;
         this.playlist = [];
         this.isPlaying = false;
+        this._stopKeepAlive();
         this._lastStableTime = null;
         this._clearJumpBack();
         this._clearRecoveryState();
@@ -1057,6 +1081,7 @@ const AudioPlayer = {
 
     /** `playing`: if the restore seek was silently dropped, retry it. */
     _onPlaying() {
+        this._startKeepAlive();
         this._checkRestoreLanded();
     },
 
@@ -1586,6 +1611,7 @@ const AudioPlayer = {
         } else {
             this.isPlaying = false;
             this.updatePlayButton();
+            this._stopKeepAlive();
         }
     },
 
@@ -1596,6 +1622,7 @@ const AudioPlayer = {
         this.isPlaying = true;
         this.updatePlayButton();
         this._acquireBackgroundLock();
+        this._startKeepAlive();
     },
 
     /**
@@ -1604,6 +1631,11 @@ const AudioPlayer = {
     onPause() {
         this.isPlaying = false;
         this.updatePlayButton();
+        // End of a file fires `pause` before `ended`: the next file is
+        // about to load, so keep the output open across the switch. Any
+        // other pause (user, lost audio focus) releases it.
+        if (this.audio.ended) this._scheduleKeepAliveStop();
+        else this._stopKeepAlive();
         this.saveProgress();
         // User paused — likely about to walk away from this device; push
         // the position so the next device can pick up exactly there.
@@ -1631,6 +1663,62 @@ const AudioPlayer = {
         if (!this._bgLockAbort) return;
         this._bgLockAbort.abort();
         this._bgLockAbort = null;
+    },
+
+    /**
+     * Run the keep-alive tone (see _keepAliveCtx). Called from play /
+     * playing, after the user has interacted with the page, so the
+     * context may start. Skipped on iOS: separate audio-session handling
+     * there, and the DAC problem is an Android one.
+     */
+    _startKeepAlive() {
+        this._cancelKeepAliveStop();
+        if (this._keepAliveCtx === false) return;
+        if (!this._keepAliveCtx) {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            const iOS = /iP(hone|ad|od)/.test(navigator.userAgent)
+                || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+            if (!Ctx || iOS) {
+                this._keepAliveCtx = false;
+                return;
+            }
+            try {
+                const ctx = new Ctx({ latencyHint: 'playback' });
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.frequency.value = this.KEEPALIVE_HZ;
+                gain.gain.value = this.KEEPALIVE_GAIN;
+                osc.connect(gain).connect(ctx.destination);
+                osc.start();
+                this._keepAliveCtx = ctx;
+            } catch (e) {
+                console.warn('Audio keep-alive unavailable:', e);
+                this._keepAliveCtx = false;
+                return;
+            }
+        }
+        // Unconditional: resume/suspend apply in call order, so a suspend
+        // still in flight can't leave the output stopped (or vice versa).
+        this._keepAliveCtx.resume().catch(() => { /* not allowed yet */ });
+    },
+
+    _stopKeepAlive() {
+        this._cancelKeepAliveStop();
+        if (this._keepAliveCtx) this._keepAliveCtx.suspend().catch(() => {});
+    },
+
+    /** Release the output after KEEPALIVE_IDLE_MS unless playback resumes. */
+    _scheduleKeepAliveStop() {
+        if (!this._keepAliveCtx || this._keepAliveStopTimer) return;
+        this._keepAliveStopTimer = setTimeout(() => {
+            this._keepAliveStopTimer = null;
+            this._stopKeepAlive();
+        }, this.KEEPALIVE_IDLE_MS);
+    },
+
+    _cancelKeepAliveStop() {
+        clearTimeout(this._keepAliveStopTimer);
+        this._keepAliveStopTimer = null;
     },
 
     /**
@@ -1818,6 +1906,7 @@ const AudioPlayer = {
         this.playlist = [];
         this.currentIndex = 0;
         this.currentItem = null;
+        this._stopKeepAlive();
         this._lastStableTime = null;
         this._clearJumpBack();
         this._clearRecoveryState();

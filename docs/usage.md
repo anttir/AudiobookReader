@@ -129,6 +129,13 @@ Varmista että tilisi on listalla (omassa kopiossa: Workerin `ALLOWED_EMAILS`).
 ### Ääni ei toistu
 - Jotkin selaimet vaativat käyttäjän interaktion ennen äänentoistoa — paina play.
 
+### Ääni häivyttyy sisään tiedostonvaihdon tai katkon jälkeen (USB-C-kuulokkeet)
+Kuulokkeet, joissa on oma DAC (esim. Apple EarPods USB-C), menevät lepoon
+kun äänilähtö katkeaa hetkeksi, ja häivyttävät seuraavan äänen sisään.
+Soitin pitää lähdön auki toiston ajan kuulumattomalla signaalilla, joten
+tätä ei pitäisi enää tapahtua. Tauon jälkeen jatkaessa lyhyt häivytys on
+normaalia: lähtö suljetaan tauon ajaksi akun säästämiseksi.
+
 ### Edistyminen ei tallennu
 - Salli `localStorage`. Incognito/yksityinen selaus ei säilytä dataa.
 - Laitteiden välinen synkronointi vaatii Google Drive -luvan (käyttää
