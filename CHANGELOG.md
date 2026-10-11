@@ -4,6 +4,15 @@ Merkittävät muutokset, uusin ensin. Tarkka historia: git- ja PR-loki.
 
 ## 2026-10
 
+- **USB-C-herätys säädettäväksi**: soittimessa nopeuden vieressä valinta
+  *Pois / −40 / −30 / −20 dB* (oletus −30). Kuulokkeiden mykistysraja
+  vaihtelee adapterikohtaisesti, eikä kiinteä −40 dBFS riittänyt EarPods
+  USB-C:lle. Diagnostiikan laskuri näyttää signaalin tilan. Diagnostiikan
+  mittaus *Suon villi laulu* -kirjasta: katkoista vain ~6 % osui
+  segmenttisaumoihin (sattumanvarainen osuus), eli segmentit eivät ole syy;
+  kirjassa on paljon digitaalista hiljaisuutta. Sama oire on raportoitu
+  Samsung-yhteisössä USB-C-kuulokkeilla BookBeatissa ja Spotifyssa, ja siellä
+  toimivaksi kiertotieksi kerrotaan rinnalla soiva kuulumaton (10 Hz) ääni.
 - **Äänidiagnostiikka** (*Asetukset → Tietoja*, oletuksena pois): mittaa
   puhelimella toistettavasta äänestä lyhyet katkot (ja ovatko ne
   HLS-segmenttien saumoissa), digitaalisen hiljaisuuden ja

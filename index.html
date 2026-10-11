@@ -48,7 +48,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AudioBook Reader</title>
     <!-- Bump ?v= on every release so browsers fetch the new files. -->
-    <link rel="stylesheet" href="css/styles.css?v=20261011c">
+    <link rel="stylesheet" href="css/styles.css?v=20261011d">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a1a2e">
     <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
@@ -303,6 +303,15 @@
                     <option value="1.75">1.75x</option>
                     <option value="2">2x</option>
                 </select>
+                <span id="keepalive-control" class="keepalive-control" title="Kuulumaton 20 Hz:n signaali, joka pitää USB-C-kuulokkeet (esim. Apple EarPods USB-C) hereillä kirjan hiljaisissa kohdissa. Jos ääni häivyttyy sisään taukojen jälkeen, kokeile voimakkaampaa.">
+                    <span>USB-C-herätys:</span>
+                    <select id="keepalive-level">
+                        <option value="off">Pois</option>
+                        <option value="-40">−40 dB</option>
+                        <option value="-30">−30 dB</option>
+                        <option value="-20">−20 dB</option>
+                    </select>
+                </span>
             </div>
         </div>
 
@@ -452,20 +461,20 @@
 
     <!-- Scripts -->
     <!-- Bump ?v= on every release so browsers fetch the new files. -->
-    <script src="js/config.js?v=20261011c"></script>
-    <script src="js/storage.js?v=20261011c"></script>
-    <script src="js/auth.js?v=20261011c"></script>
-    <script src="js/sync.js?v=20261011c"></script>
-    <script src="js/providers/provider-base.js?v=20261011c"></script>
-    <script src="js/providers/drive-provider.js?v=20261011c"></script>
-    <script src="js/providers/r2-provider.js?v=20261011c"></script>
-    <script src="js/providers/registry.js?v=20261011c"></script>
-    <script src="js/cover-cache.js?v=20261011c"></script>
-    <script src="js/epub-cover.js?v=20261011c"></script>
-    <script src="js/pdfviewer.js?v=20261011c"></script>
-    <script src="js/epubviewer.js?v=20261011c"></script>
-    <script src="js/audioplayer.js?v=20261011c"></script>
-    <script src="js/audio-diagnostics.js?v=20261011c"></script>
-    <script src="js/app.js?v=20261011c"></script>
+    <script src="js/config.js?v=20261011d"></script>
+    <script src="js/storage.js?v=20261011d"></script>
+    <script src="js/auth.js?v=20261011d"></script>
+    <script src="js/sync.js?v=20261011d"></script>
+    <script src="js/providers/provider-base.js?v=20261011d"></script>
+    <script src="js/providers/drive-provider.js?v=20261011d"></script>
+    <script src="js/providers/r2-provider.js?v=20261011d"></script>
+    <script src="js/providers/registry.js?v=20261011d"></script>
+    <script src="js/cover-cache.js?v=20261011d"></script>
+    <script src="js/epub-cover.js?v=20261011d"></script>
+    <script src="js/pdfviewer.js?v=20261011d"></script>
+    <script src="js/epubviewer.js?v=20261011d"></script>
+    <script src="js/audioplayer.js?v=20261011d"></script>
+    <script src="js/audio-diagnostics.js?v=20261011d"></script>
+    <script src="js/app.js?v=20261011d"></script>
 </body>
 </html>

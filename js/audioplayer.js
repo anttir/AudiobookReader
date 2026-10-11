@@ -96,13 +96,15 @@ const AudioPlayer = {
     _keepAlive: null,          // { ctx, gain }; false = unavailable
     _keepAliveStopTimer: null,
     _keepAliveSuspendTimer: null,
-    // 20 Hz at -40 dBFS peak: still far below hearing threshold at that
-    // frequency (~78 dB SPL; earbuds reproduce little of it), and well
-    // above what the DAC treats as silence after Android's volume scaling.
-    // -74 and then -50 dBFS were not enough. Not digital silence either
-    // way: Chrome moves an all-zero Web Audio output to a fake sink after 30 s.
+    // 20 Hz: far below hearing threshold at that frequency (~78 dB SPL;
+    // earbuds reproduce little of it). The level (dBFS peak) is the
+    // user's choice in the player ("USB-C-herätys"): the silence threshold
+    // differs per adapter (-74 and -50 dBFS fixed levels were not enough
+    // for Apple EarPods USB-C). Max -20: louder would clip loud peaks.
+    // Never digital silence: Chrome moves an all-zero Web Audio output to
+    // a fake sink after 30 s.
     KEEPALIVE_HZ: 20,
-    KEEPALIVE_GAIN: 0.01,
+    KEEPALIVE_DEFAULT_DB: -30,
     // Fade time constant (s) on start/stop, so the tone never steps.
     KEEPALIVE_FADE_S: 0.02,
     // Nothing playing this long (next file loading — Drive downloads it
@@ -213,6 +215,12 @@ const AudioPlayer = {
         });
 
         // Playback speed
+        const keepAliveSel = document.getElementById('keepalive-level');
+        const keepAliveDb = this._keepAliveDb();
+        keepAliveSel.value = keepAliveDb === null ? 'off' : String(keepAliveDb);
+        keepAliveSel.addEventListener('change', (e) => this.setKeepAliveLevel(e.target.value));
+        document.getElementById('keepalive-control').classList.toggle('hidden', !this._keepAliveSupported());
+
         document.getElementById('playback-speed').addEventListener('change', (e) => {
             this.setPlaybackSpeed(parseFloat(e.target.value));
         });
@@ -1671,24 +1679,56 @@ const AudioPlayer = {
         this._bgLockAbort = null;
     },
 
+    /** Chosen keep-alive level in dBFS, or null when switched off. */
+    _keepAliveDb() {
+        const v = Storage.getSettings().keepAliveDb;
+        if (v === 'off') return null;
+        return Number.isFinite(v) ? v : this.KEEPALIVE_DEFAULT_DB;
+    },
+
+    /** Web Audio present and not iOS (separate audio-session handling there; the DAC problem is an Android one). */
+    _keepAliveSupported() {
+        const iOS = /iP(hone|ad|od)/.test(navigator.userAgent)
+            || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+        return !iOS && !!(window.AudioContext || window.webkitAudioContext);
+    },
+
+    /** Player's "USB-C-herätys" select: 'off' or a dBFS level. Applies at once. */
+    setKeepAliveLevel(value) {
+        Storage.setSettings({ keepAliveDb: value === 'off' ? 'off' : Number(value) });
+        if (value === 'off') this._stopKeepAlive();
+        else if (!this.audio.paused) this._startKeepAlive();
+        if (typeof AudioDiagnostics !== 'undefined') AudioDiagnostics.renderLive();
+    },
+
+    /** Keep-alive state for the diagnostics counter. */
+    keepAliveStatus() {
+        const db = this._keepAliveDb();
+        if (db === null) return 'pois';
+        const level = `${String(db).replace('-', '−')} dB`;
+        if (this._keepAlive === false) return 'ei tuettu';
+        if (!this._keepAlive) return `${level}, ei käynnissä`;
+        const state = this._keepAlive.ctx.state;
+        return state === 'running' ? level : `${level}, ${state === 'suspended' ? 'pysäytetty' : state}`;
+    },
+
     /**
-     * Run the keep-alive tone (see _keepAlive). Called from play /
-     * playing, after the user has interacted with the page, so the
-     * context may start. Skipped on iOS: separate audio-session handling
-     * there, and the DAC problem is an Android one.
+     * Run the keep-alive tone (see _keepAlive) at the chosen level.
+     * Called from play / playing, after the user has interacted with the
+     * page, so the context may start.
      */
     _startKeepAlive() {
         this._cancelKeepAliveStop();
         if (this._keepAlive === false) return;
+        const db = this._keepAliveDb();
+        if (db === null) return;
         if (!this._keepAlive) {
-            const Ctx = window.AudioContext || window.webkitAudioContext;
-            const iOS = /iP(hone|ad|od)/.test(navigator.userAgent)
-                || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-            if (!Ctx || iOS) {
+            if (!this._keepAliveSupported()) {
                 this._keepAlive = false;
                 return;
             }
             try {
+                const Ctx = window.AudioContext || window.webkitAudioContext;
                 const ctx = new Ctx({ latencyHint: 'playback' });
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
@@ -1709,7 +1749,7 @@ const AudioPlayer = {
         // still in flight can't leave the output stopped (or vice versa).
         ctx.resume().catch(() => { /* not allowed yet */ });
         // Each fade continues from the current value — no steps.
-        gain.gain.setTargetAtTime(this.KEEPALIVE_GAIN, ctx.currentTime, this.KEEPALIVE_FADE_S);
+        gain.gain.setTargetAtTime(Math.pow(10, db / 20), ctx.currentTime, this.KEEPALIVE_FADE_S);
     },
 
     /** Fade the tone out, then suspend the context (releases the output). */

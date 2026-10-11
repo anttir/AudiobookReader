@@ -243,9 +243,11 @@ const AudioDiagnostics = {
         const s = this.stats;
         const last = s.events[0];
         const fmt = (t) => (typeof AudioPlayer !== 'undefined') ? AudioPlayer.formatTime(t) : t.toFixed(1);
+        const signal = (typeof AudioPlayer !== 'undefined') ? AudioPlayer.keepAliveStatus() : '?';
         el.textContent = `Diagnostiikka · katkoja ${s.holes} (saumoissa ${s.holesOnBoundary})`
             + ` · hiljaisuus ${s.silences} · pysähdyksiä ${s.stalls}`
-            + (last ? ` · viimeisin ${fmt(last.t)}` : '');
+            + (last ? ` · viimeisin ${fmt(last.t)}` : '')
+            + ` · herätys ${signal}`;
     },
 
     /** Multi-line summary for Asetukset → Tietoja. */
