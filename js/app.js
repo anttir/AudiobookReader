@@ -271,6 +271,22 @@ const App = {
             this.showChapterList();
         });
 
+        // In listen mode the parts button sits in the player's footer row
+        // next to the speed selector; as a floating button it covered it.
+        const audioContainer = document.getElementById('audio-player-container');
+        const placePartsButton = () => {
+            const btn = document.getElementById('show-parts-btn');
+            const inPlayer = !audioContainer.classList.contains('hidden');
+            const target = inPlayer
+                ? audioContainer.querySelector('.player-footer')
+                : document.getElementById('reader-screen');
+            if (btn.parentElement !== target) target.appendChild(btn);
+            btn.classList.toggle('in-player', inPlayer);
+        };
+        new MutationObserver(placePartsButton)
+            .observe(audioContainer, { attributes: true, attributeFilter: ['class'] });
+        placePartsButton();
+
         // Chapter list close
         document.getElementById('close-chapters').addEventListener('click', () => {
             this.hideChapterList();
@@ -1712,11 +1728,19 @@ const App = {
                 if (ch[i].start <= currentTime) activeIdx = i;
                 else break;
             }
+            // "Kuunneltu" = continuous playback ("kuunneltu asti") has
+            // reached the chapter's end.
+            const maxTime = AudioPlayer._maxTime;
+            const total = AudioPlayer.audio?.duration;
             let chapterHtml = '';
             ch.forEach((c, i) => {
+                const end = i + 1 < ch.length ? ch[i + 1].start : total;
+                const classes = [];
+                if (i === activeIdx) classes.push('active');
+                if (this._isListenedTo(maxTime, end)) classes.push('listened');
                 chapterHtml += `
-                    <li class="${i === activeIdx ? 'active' : ''}" data-chapter-index="${i}">
-                        <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                    <li class="${classes.join(' ')}" data-chapter-index="${i}">
+                        ${classes.includes('listened') ? this._listenedIcon() : this._audioIcon()}
                         <span>${c.title}</span>
                         <span class="chapter-progress">${AudioPlayer.formatTime(c.start)}</span>
                     </li>
@@ -1730,10 +1754,11 @@ const App = {
                     this.hideChapterList();
                 });
             });
-            // Scroll active row into view (chapter lists can be long)
+            // Scroll active row into view (chapter lists can be long);
+            // the list has to be visible first or there is nothing to scroll.
+            list.classList.remove('hidden');
             const active = chapters.querySelector('li.active');
             if (active) active.scrollIntoView({ block: 'center' });
-            list.classList.remove('hidden');
             return;
         }
 
@@ -1765,10 +1790,16 @@ const App = {
                 const progress = this._getItemProgress(file);
                 const progressText = progress ? `${progress.percentage}%` : '';
                 const isActive = AudioPlayer.currentFileId === file.id;
+                const maxTime = Storage.maxDefined(progress?.maxTime, progress?.currentTime,
+                    isActive ? AudioPlayer._maxTime : undefined);
+                const listened = this._isListenedTo(maxTime, progress?.duration);
+                const classes = [];
+                if (isActive) classes.push('active');
+                if (listened) classes.push('listened');
 
                 html += `
-                    <li class="${isActive ? 'active' : ''}" data-file-id="${file.id}" data-file-name="${file.name}" data-type="audio">
-                        <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                    <li class="${classes.join(' ')}" data-file-id="${file.id}" data-file-name="${file.name}" data-type="audio">
+                        ${listened ? this._listenedIcon() : this._audioIcon()}
                         <span>${file.name.replace(/\.[^/.]+$/, '')}</span>
                         <span class="chapter-progress">${progressText}</span>
                     </li>
@@ -1794,6 +1825,20 @@ const App = {
         });
 
         list.classList.remove('hidden');
+    },
+
+    /** Continuous playback has reached `end` (within the end margin). */
+    _isListenedTo(maxTime, end) {
+        return Number.isFinite(maxTime) && Number.isFinite(end) && end > 0
+            && maxTime >= end - AudioPlayer.END_MARGIN_S;
+    },
+
+    _audioIcon() {
+        return '<svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>';
+    },
+
+    _listenedIcon() {
+        return '<svg viewBox="0 0 24 24" class="listened-icon" aria-label="Kuunneltu"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
     },
 
     /**

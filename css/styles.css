@@ -1510,6 +1510,33 @@ body {
     fill: currentColor;
 }
 
+/* In listen mode the parts button lives in the player footer row */
+.player-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 12px 20px;
+}
+
+.parts-btn.in-player {
+    position: static;
+    box-shadow: none;
+}
+
+/* Listened chapters: check mark, dimmed title */
+.chapter-list li.listened:not(.active) {
+    color: var(--text-secondary);
+}
+
+.chapter-list li .listened-icon {
+    fill: var(--success);
+}
+
+.chapter-list li.active .listened-icon {
+    fill: currentColor;
+}
+
 /* Audio loading overlay */
 .audio-loading {
     position: absolute;

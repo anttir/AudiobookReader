@@ -4,6 +4,13 @@ Merkittävät muutokset, uusin ensin. Tarkka historia: git- ja PR-loki.
 
 ## 2026-10
 
+- **Sisällysluettelo näyttää kuunnellut luvut**: luku, jonka loppuun
+  yhtäjaksoinen kuuntelu (*kuunneltu asti*) on edennyt, saa vihreän
+  ruksin ja himmennetyn nimen. Moniosaisissa kirjoissa sama tiedostoittain.
+  Lista vierittyy nyt myös oikeasti nykyisen luvun kohdalle.
+- **Kappalelistan nappi ei enää peitä nopeusvalintaa**: kuuntelutilassa
+  nappi on nopeusvalinnan vieressä samalla rivillä, ei kelluvana.
+
 - **USB-C-kuulokkeiden herätys asetuksiin, oletuksena 10 Hz / −30 dB**:
   ryhmä *USB-C-kuulokkeet* on sekä *Asetuksissa* että toiston aikana
   avattavissa *Lukuasetuksissa* (taso Pois / −40 / −30 / −20 dB, taajuus
