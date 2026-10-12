@@ -271,21 +271,28 @@ const App = {
             this.showChapterList();
         });
 
-        // In listen mode the parts button sits in the player's footer row
-        // next to the speed selector; as a floating button it covered it.
+        // In listen mode the chapter chip under the title opens the list,
+        // so the floating parts button (which covered the speed selector)
+        // is hidden there.
         const audioContainer = document.getElementById('audio-player-container');
-        const placePartsButton = () => {
-            const btn = document.getElementById('show-parts-btn');
-            const inPlayer = !audioContainer.classList.contains('hidden');
-            const target = inPlayer
-                ? audioContainer.querySelector('.player-footer')
-                : document.getElementById('reader-screen');
-            if (btn.parentElement !== target) target.appendChild(btn);
-            btn.classList.toggle('in-player', inPlayer);
-        };
-        new MutationObserver(placePartsButton)
+        const syncListenMode = () => document.getElementById('reader-screen')
+            .classList.toggle('listening', !audioContainer.classList.contains('hidden'));
+        new MutationObserver(syncListenMode)
             .observe(audioContainer, { attributes: true, attributeFilter: ['class'] });
-        placePartsButton();
+        syncListenMode();
+
+        // Chapter chip → table of contents sheet
+        document.getElementById('chapter-chip').addEventListener('click', () => {
+            this.showChapterList();
+        });
+        const chapterList = document.getElementById('chapter-list');
+        chapterList.querySelector('.chapter-sheet-backdrop').addEventListener('click', () => {
+            this.hideChapterList();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.hideChapterList();
+        });
+        this._setupSheetDrag(chapterList);
 
         // Chapter list close
         document.getElementById('close-chapters').addEventListener('click', () => {
@@ -1708,144 +1715,238 @@ const App = {
         document.getElementById('show-parts-btn').classList.add('hidden');
     },
 
+    /** The current book has something to list: chapters, or several files. */
+    hasChapterList() {
+        const b = this.currentBook;
+        if (!b) return false;
+        return !!b.chapters?.length
+            || (b.ebooks?.length || 0) + (b.audioFiles?.length || 0) > 1;
+    },
+
     /**
-     * Show chapter/parts list
+     * Open the table of contents sheet: the HLS `chapters` array (each
+     * entry seeks to chapter.start), or the book's files.
      */
     showChapterList() {
         if (!this.currentBook) return;
-
         const list = document.getElementById('chapter-list');
-        const chapters = document.getElementById('chapters');
+        clearTimeout(this._sheetCloseTimer);
+        list.classList.remove('closing');
+        list.querySelector('.chapter-sheet').style.transform = '';
+        this._renderChapterList();
+        list.classList.remove('hidden');
+        document.getElementById('chapter-chip').setAttribute('aria-expanded', 'true');
+        // Scroll the active row into view; the list has to be visible first.
+        const active = document.querySelector('#chapters li.active');
+        if (active) active.scrollIntoView({ block: 'center' });
+    },
 
-        // HLS audiobooks with a `chapters` manifest array: render those
-        // (each entry seeks to chapter.start) instead of the playlist
-        // file. The non-HLS code path below handles multi-file books.
-        if (this.currentBook.chapters?.length) {
-            const ch = this.currentBook.chapters;
-            const currentTime = AudioPlayer.audio?.currentTime || 0;
-            let activeIdx = 0;
-            for (let i = 0; i < ch.length; i++) {
-                if (ch[i].start <= currentTime) activeIdx = i;
-                else break;
+    /** Slide the sheet away, then hide it. */
+    hideChapterList() {
+        const list = document.getElementById('chapter-list');
+        if (list.classList.contains('hidden') || list.classList.contains('closing')) return;
+        list.classList.add('closing');
+        document.getElementById('chapter-chip').setAttribute('aria-expanded', 'false');
+        this._sheetCloseTimer = setTimeout(() => {
+            list.classList.add('hidden');
+            list.classList.remove('closing');
+            list.querySelector('.chapter-sheet').style.transform = '';
+        }, 220);
+    },
+
+    /** Drag the sheet's handle/header down to close it. */
+    _setupSheetDrag(list) {
+        const sheet = list.querySelector('.chapter-sheet');
+        const grab = list.querySelector('.chapter-sheet-grab');
+        let startY = null;
+        let dy = 0;
+        grab.addEventListener('pointerdown', (e) => {
+            if (e.target.closest('button')) return;
+            startY = e.clientY;
+            dy = 0;
+            grab.setPointerCapture(e.pointerId);
+            sheet.classList.add('dragging');
+        });
+        grab.addEventListener('pointermove', (e) => {
+            if (startY === null) return;
+            dy = Math.max(0, e.clientY - startY);
+            sheet.style.transform = `translateY(${dy}px)`;
+        });
+        const end = () => {
+            if (startY === null) return;
+            startY = null;
+            sheet.classList.remove('dragging');
+            if (dy > Math.min(120, sheet.offsetHeight / 4)) {
+                this.hideChapterList();     // slides on from where it was let go
+            } else {
+                sheet.style.transform = '';
             }
+        };
+        grab.addEventListener('pointerup', end);
+        grab.addEventListener('pointercancel', end);
+    },
+
+    _escapeHtml(text) {
+        return String(text ?? '').replace(/[&<>"']/g, c => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    },
+
+    /**
+     * One row of the sheet. Leading mark: equalizer on the playing row,
+     * check on listened ones, an empty ring on the rest (or `icon`).
+     */
+    _chapterRow({ title, time, active, listened, attrs, icon }) {
+        const cls = [active && 'active', listened && 'listened'].filter(Boolean).join(' ');
+        const lead = icon
+            || (active ? '<span class="chapter-eq" aria-hidden="true"><i></i><i></i><i></i></span>'
+            : listened ? '<svg viewBox="0 0 24 24" class="chapter-check" aria-label="Kuunneltu"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>'
+            : '<span class="chapter-ring" aria-hidden="true"></span>');
+        return `
+            <li class="${cls}" ${attrs}${active ? ' aria-current="true"' : ''}>
+                <span class="chapter-row-icon">${lead}</span>
+                <span class="chapter-row-title">${this._escapeHtml(title)}</span>
+                <span class="chapter-row-time">${time}</span>
+                ${active ? '<span class="chapter-row-progress"></span>' : ''}
+            </li>`;
+    },
+
+    _renderChapterList() {
+        const ul = document.getElementById('chapters');
+        const summary = document.getElementById('chapter-list-summary');
+        const book = this.currentBook;
+        ul.classList.toggle('playing', !!AudioPlayer.isPlaying);
+
+        if (book.chapters?.length) {
             // "Kuunneltu" = continuous playback ("kuunneltu asti") has
             // reached the chapter's end.
-            const maxTime = AudioPlayer._maxTime;
+            const ch = book.chapters;
+            const t = AudioPlayer.audio?.currentTime || 0;
             const total = AudioPlayer.audio?.duration;
-            let chapterHtml = '';
-            ch.forEach((c, i) => {
+            const maxTime = AudioPlayer._maxTime;
+            const activeIdx = AudioPlayer._chapterIndexAt(t);
+            let done = 0;
+            ul.innerHTML = ch.map((c, i) => {
                 const end = i + 1 < ch.length ? ch[i + 1].start : total;
-                const classes = [];
-                if (i === activeIdx) classes.push('active');
-                if (this._isListenedTo(maxTime, end)) classes.push('listened');
-                chapterHtml += `
-                    <li class="${classes.join(' ')}" data-chapter-index="${i}">
-                        ${classes.includes('listened') ? this._listenedIcon() : this._audioIcon()}
-                        <span>${c.title}</span>
-                        <span class="chapter-progress">${AudioPlayer.formatTime(c.start)}</span>
-                    </li>
-                `;
-            });
-            chapters.innerHTML = chapterHtml;
-            chapters.querySelectorAll('li[data-chapter-index]').forEach(item => {
+                const listened = this._isListenedTo(maxTime, end);
+                if (listened) done++;
+                return this._chapterRow({
+                    title: c.title,
+                    time: Number.isFinite(end) ? AudioPlayer.formatTime(end - c.start) : '',
+                    active: i === activeIdx,
+                    listened,
+                    attrs: `data-chapter-index="${i}"`,
+                });
+            }).join('');
+            ul.dataset.mode = 'chapters';
+            ul.dataset.summary = `${done}/${ch.length} kuunneltu`;
+            summary.textContent = ul.dataset.summary;
+            ul.querySelectorAll('li[data-chapter-index]').forEach(item => {
                 item.addEventListener('click', () => {
-                    const idx = Number(item.dataset.chapterIndex);
-                    AudioPlayer.seekToChapter(ch[idx]);
+                    AudioPlayer.seekToChapter(ch[Number(item.dataset.chapterIndex)]);
                     this.hideChapterList();
                 });
             });
-            // Scroll active row into view (chapter lists can be long);
-            // the list has to be visible first or there is nothing to scroll.
-            list.classList.remove('hidden');
-            const active = chapters.querySelector('li.active');
-            if (active) active.scrollIntoView({ block: 'center' });
+            this.updateChapterListProgress();
             return;
         }
 
         let html = '';
+        const ebooks = book.ebooks || [];
+        const audioFiles = book.audioFiles || [];
+        const bookIcon = '<svg viewBox="0 0 24 24" class="chapter-doc"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>';
 
-        // Add ebook parts
-        if (this.currentBook.ebooks?.length > 0) {
-            this.currentBook.ebooks.forEach((file, index) => {
-                const progress = this._getItemProgress(file);
-                const progressText = progress ? `${progress.percentage}%` : '';
-                const isActive = PDFViewer.currentFileId === file.id || EPUBViewer.currentFileId === file.id;
-
-                html += `
-                    <li class="${isActive ? 'active' : ''}" data-file-id="${file.id}" data-file-name="${file.name}" data-type="${Drive.isEPUB(file) ? 'epub' : 'pdf'}">
-                        <svg viewBox="0 0 24 24"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
-                        <span>${file.name.replace(/\.[^/.]+$/, '')}</span>
-                        <span class="chapter-progress">${progressText}</span>
-                    </li>
-                `;
+        ebooks.forEach(file => {
+            const progress = this._getItemProgress(file);
+            html += this._chapterRow({
+                title: file.name.replace(/\.[^/.]+$/, ''),
+                time: progress ? `${progress.percentage}%` : '',
+                active: PDFViewer.currentFileId === file.id || EPUBViewer.currentFileId === file.id,
+                listened: false,
+                icon: bookIcon,
+                attrs: `data-file-id="${file.id}" data-file-name="${this._escapeHtml(file.name)}" data-type="${Drive.isEPUB(file) ? 'epub' : 'pdf'}"`,
             });
+        });
+
+        let done = 0;
+        if (audioFiles.length && ebooks.length) {
+            html += '<li class="chapter-section">Äänitiedostot</li>';
         }
-
-        // Add audio parts
-        if (this.currentBook.audioFiles?.length > 0) {
-            if (this.currentBook.ebooks?.length > 0) {
-                html += '<li style="padding: 8px 16px; color: var(--text-secondary); font-size: 0.8rem; border: none;">ÄÄNITIEDOSTOT</li>';
-            }
-            this.currentBook.audioFiles.forEach((file, index) => {
-                const progress = this._getItemProgress(file);
-                const progressText = progress ? `${progress.percentage}%` : '';
-                const isActive = AudioPlayer.currentFileId === file.id;
-                const maxTime = Storage.maxDefined(progress?.maxTime, progress?.currentTime,
-                    isActive ? AudioPlayer._maxTime : undefined);
-                const listened = this._isListenedTo(maxTime, progress?.duration);
-                const classes = [];
-                if (isActive) classes.push('active');
-                if (listened) classes.push('listened');
-
-                html += `
-                    <li class="${classes.join(' ')}" data-file-id="${file.id}" data-file-name="${file.name}" data-type="audio">
-                        ${listened ? this._listenedIcon() : this._audioIcon()}
-                        <span>${file.name.replace(/\.[^/.]+$/, '')}</span>
-                        <span class="chapter-progress">${progressText}</span>
-                    </li>
-                `;
+        audioFiles.forEach(file => {
+            const progress = this._getItemProgress(file);
+            const isActive = AudioPlayer.currentFileId === file.id;
+            const maxTime = Storage.maxDefined(progress?.maxTime, progress?.currentTime,
+                isActive ? AudioPlayer._maxTime : undefined);
+            const listened = this._isListenedTo(maxTime, progress?.duration);
+            if (listened) done++;
+            html += this._chapterRow({
+                title: file.name.replace(/\.[^/.]+$/, ''),
+                time: progress ? `${progress.percentage}%` : '',
+                active: isActive,
+                listened,
+                attrs: `data-file-id="${file.id}" data-file-name="${this._escapeHtml(file.name)}" data-type="audio"`,
             });
-        }
+        });
 
-        chapters.innerHTML = html;
+        ul.innerHTML = html;
+        ul.dataset.mode = 'files';
+        ul.dataset.summary = audioFiles.length
+            ? `${done}/${audioFiles.length} kuunneltu`
+            : `${ebooks.length} osaa`;
+        summary.textContent = ul.dataset.summary;
 
-        // Add click handlers
-        chapters.querySelectorAll('li[data-file-id]').forEach(item => {
+        ul.querySelectorAll('li[data-file-id]').forEach(item => {
             item.addEventListener('click', () => {
                 this.openFile(item.dataset.fileId, item.dataset.fileName, item.dataset.type);
                 this.hideChapterList();
 
                 // Update parts button
-                const allFiles = [...(this.currentBook.ebooks || []), ...(this.currentBook.audioFiles || [])];
+                const allFiles = [...ebooks, ...audioFiles];
                 const index = allFiles.findIndex(f => f.id === item.dataset.fileId);
                 if (index !== -1) {
                     this.showPartsButton(index + 1, allFiles.length);
                 }
             });
         });
+        this.updateChapterListProgress();
+    },
 
-        list.classList.remove('hidden');
+    /**
+     * Live part of the sheet (AudioPlayer calls this on timeupdate while
+     * it's open): progress bar + time left on the playing row, time left
+     * in the book. Re-renders when playback crosses into another chapter.
+     */
+    updateChapterListProgress() {
+        const ul = document.getElementById('chapters');
+        const t = AudioPlayer.audio?.currentTime || 0;
+        const seg = AudioPlayer.chapterSegment(t);
+        if (!seg) return;
+        const active = ul.querySelector('li.active');
+        if (ul.dataset.mode === 'chapters') {
+            if (!active || Number(active.dataset.chapterIndex) !== seg.index) {
+                this._renderChapterList();
+                return;
+            }
+            const total = AudioPlayer.audio?.duration;
+            const summary = Number.isFinite(total)
+                ? `${ul.dataset.summary} · ${AudioPlayer.formatTime(Math.max(0, total - t))} jäljellä`
+                : ul.dataset.summary;
+            const summaryEl = document.getElementById('chapter-list-summary');
+            if (summaryEl.textContent !== summary) summaryEl.textContent = summary;
+        } else if (!active || active.dataset.type !== 'audio') {
+            return;
+        }
+        const span = seg.end - seg.start;
+        const p = span > 0 ? Math.min(1, Math.max(0, (t - seg.start) / span)) : 0;
+        active.querySelector('.chapter-row-progress')?.style.setProperty('transform', `scaleX(${p.toFixed(4)})`);
+        const timeEl = active.querySelector('.chapter-row-time');
+        const left = '−' + AudioPlayer.formatTime(Math.max(0, seg.end - t));
+        if (timeEl.textContent !== left) timeEl.textContent = left;
     },
 
     /** Continuous playback has reached `end` (within the end margin). */
     _isListenedTo(maxTime, end) {
         return Number.isFinite(maxTime) && Number.isFinite(end) && end > 0
             && maxTime >= end - AudioPlayer.END_MARGIN_S;
-    },
-
-    _audioIcon() {
-        return '<svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>';
-    },
-
-    _listenedIcon() {
-        return '<svg viewBox="0 0 24 24" class="listened-icon" aria-label="Kuunneltu"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
-    },
-
-    /**
-     * Hide chapter list
-     */
-    hideChapterList() {
-        document.getElementById('chapter-list').classList.add('hidden');
     },
 
     /**

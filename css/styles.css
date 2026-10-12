@@ -644,6 +644,99 @@ body {
     font-size: 0.9rem;
 }
 
+/* Chapter chip: current chapter under the title; opens the contents */
+.chapter-chip {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    max-width: min(100%, 340px);
+    margin-top: 2px;
+    padding: 6px 14px 8px;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    background: none;
+    color: var(--text-secondary);
+    font: inherit;
+    cursor: pointer;
+    transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.chapter-chip:not(:disabled):hover,
+.chapter-chip:focus-visible {
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+    outline: none;
+}
+
+.chapter-chip:not(:disabled):active {
+    transform: scale(0.98);
+}
+
+.chapter-chip:disabled {
+    cursor: default;
+}
+
+.chapter-chip-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    max-width: 100%;
+    font-size: 0.95rem;
+}
+
+#audio-chapter {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.chapter-chip-chevron {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+    opacity: 0.7;
+}
+
+.chapter-chip:disabled .chapter-chip-chevron {
+    display: none;
+}
+
+.chapter-chip-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    opacity: 0.85;
+}
+
+.chapter-chip-track {
+    position: relative;
+    width: 72px;
+    height: 3px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--text-secondary) 30%, transparent);
+    overflow: hidden;
+}
+
+#chapter-chip-fill {
+    position: absolute;
+    inset: 0;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.25s linear;
+}
+
+/* Floating parts button is for reading mode; listen mode has the chip */
+#reader-screen.listening .parts-btn {
+    display: none;
+}
+
 .progress-container {
     display: flex;
     align-items: center;
@@ -1296,55 +1389,6 @@ body {
     }
 }
 
-/* Chapter List */
-.chapter-list {
-    position: absolute;
-    bottom: 80px;
-    left: 20px;
-    right: 20px;
-    max-height: 300px;
-    background: var(--bg-secondary);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-lg);
-    overflow: hidden;
-}
-
-.chapter-list h3 {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border-color);
-    font-size: 0.9rem;
-}
-
-.chapter-list ul {
-    list-style: none;
-    max-height: 240px;
-    overflow-y: auto;
-}
-
-.chapter-list li {
-    padding: 12px 16px;
-    cursor: pointer;
-    transition: background var(--transition);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.chapter-list li:hover {
-    background: var(--bg-tertiary);
-}
-
-.chapter-list li.active {
-    background: var(--accent);
-    color: white;
-}
-
-.chapter-list li svg {
-    width: 16px;
-    height: 16px;
-    fill: currentColor;
-}
-
 /* Hidden utility */
 .hidden {
     display: none !important;
@@ -1418,64 +1462,248 @@ body {
     text-align: center;
 }
 
-/* Chapter list improvements */
+/* Table of contents: bottom sheet */
 .chapter-list {
-    position: absolute;
-    top: 70px;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--bg-secondary);
-    z-index: 100;
+    position: fixed;
+    inset: 0;
+    z-index: 900;
     display: flex;
     flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+.chapter-sheet-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(5, 8, 20, 0.55);
+    animation: sheet-fade-in 0.25s ease;
+    transition: opacity 0.22s ease;
+}
+
+.chapter-sheet {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 640px;
+    max-height: min(78vh, 78dvh);
+    background: var(--bg-secondary);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35);
+    padding-bottom: env(safe-area-inset-bottom);
+    animation: sheet-slide-up 0.3s cubic-bezier(0.2, 0.9, 0.25, 1);
+    transition: transform 0.22s ease-in;
+}
+
+.chapter-sheet.dragging {
+    transition: none;
+}
+
+.chapter-list.closing .chapter-sheet {
+    transform: translateY(100%) !important;
+}
+
+.chapter-list.closing .chapter-sheet-backdrop {
+    opacity: 0;
+}
+
+@keyframes sheet-slide-up {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+@keyframes sheet-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.chapter-sheet-grab {
+    touch-action: none;
+    cursor: grab;
+}
+
+.chapter-sheet-handle {
+    width: 40px;
+    height: 4px;
+    margin: 10px auto 2px;
+    border-radius: 2px;
+    background: var(--border-color);
 }
 
 .chapter-list-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 16px;
+    gap: 12px;
+    padding: 8px 12px 12px 20px;
     border-bottom: 1px solid var(--border-color);
 }
 
 .chapter-list-header h3 {
-    font-size: 1rem;
+    font-size: 1.05rem;
+}
+
+.chapter-list-summary {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
 }
 
 .chapter-list ul {
     flex: 1;
     overflow-y: auto;
+    overscroll-behavior: contain;
     list-style: none;
+    padding: 6px 0 12px;
 }
 
 .chapter-list li {
-    padding: 14px 16px;
-    cursor: pointer;
-    transition: background var(--transition);
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 12px;
-    border-bottom: 1px solid var(--border-color);
+    gap: 14px;
+    margin: 0 8px;
+    padding: 13px 12px;
+    border-radius: 12px;
+    cursor: pointer;
+    overflow: hidden;
+    transition: background var(--transition);
 }
 
 .chapter-list li:hover {
-    background: var(--bg-tertiary);
+    background: color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
 
-.chapter-list li.active {
-    background: var(--accent);
-    color: white;
-}
-
-.chapter-list li .chapter-progress {
-    margin-left: auto;
-    font-size: 0.8rem;
+.chapter-list li.listened:not(.active) .chapter-row-title {
     color: var(--text-secondary);
 }
 
-.chapter-list li.active .chapter-progress {
-    color: rgba(255, 255, 255, 0.8);
+.chapter-list li.active {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.chapter-list li.active .chapter-row-title {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.chapter-list li.chapter-section {
+    padding: 14px 12px 6px;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    cursor: default;
+}
+
+.chapter-list li.chapter-section:hover {
+    background: none;
+}
+
+.chapter-row-icon {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+}
+
+.chapter-row-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.chapter-row-time {
+    flex: none;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.chapter-list li.active .chapter-row-time {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+/* Position within the playing chapter, along the row's bottom edge */
+.chapter-row-progress {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 5px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.25s linear;
+}
+
+.chapter-check {
+    width: 18px;
+    height: 18px;
+    fill: var(--success);
+}
+
+.chapter-doc {
+    width: 18px;
+    height: 18px;
+    fill: var(--text-secondary);
+}
+
+.chapter-ring {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 1.5px solid var(--text-secondary);
+    opacity: 0.5;
+}
+
+/* Playing row: three bars, moving only while audio plays */
+.chapter-eq {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 14px;
+}
+
+.chapter-eq i {
+    width: 3px;
+    height: 100%;
+    border-radius: 1px;
+    background: var(--accent);
+    transform-origin: bottom;
+    transform: scaleY(0.4);
+}
+
+.chapter-eq i:nth-child(2) { transform: scaleY(0.8); }
+.chapter-eq i:nth-child(3) { transform: scaleY(0.55); }
+
+#chapters.playing .chapter-eq i {
+    animation: chapter-eq 1s ease-in-out infinite;
+}
+
+#chapters.playing .chapter-eq i:nth-child(2) { animation-delay: -0.4s; }
+#chapters.playing .chapter-eq i:nth-child(3) { animation-delay: -0.7s; }
+
+@keyframes chapter-eq {
+    0%, 100% { transform: scaleY(0.3); }
+    50% { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .chapter-sheet,
+    .chapter-sheet-backdrop,
+    #chapters.playing .chapter-eq i {
+        animation: none;
+    }
 }
 
 /* Parts button for multi-file books */
@@ -1507,33 +1735,6 @@ body {
 .parts-btn svg {
     width: 20px;
     height: 20px;
-    fill: currentColor;
-}
-
-/* In listen mode the parts button lives in the player footer row */
-.player-footer {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: 12px 20px;
-}
-
-.parts-btn.in-player {
-    position: static;
-    box-shadow: none;
-}
-
-/* Listened chapters: check mark, dimmed title */
-.chapter-list li.listened:not(.active) {
-    color: var(--text-secondary);
-}
-
-.chapter-list li .listened-icon {
-    fill: var(--success);
-}
-
-.chapter-list li.active .listened-icon {
     fill: currentColor;
 }
 

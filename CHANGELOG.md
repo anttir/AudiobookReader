@@ -8,8 +8,14 @@ Merkittävät muutokset, uusin ensin. Tarkka historia: git- ja PR-loki.
   yhtäjaksoinen kuuntelu (*kuunneltu asti*) on edennyt, saa vihreän
   ruksin ja himmennetyn nimen. Moniosaisissa kirjoissa sama tiedostoittain.
   Lista vierittyy nyt myös oikeasti nykyisen luvun kohdalle.
-- **Kappalelistan nappi ei enää peitä nopeusvalintaa**: kuuntelutilassa
-  nappi on nopeusvalinnan vieressä samalla rivillä, ei kelluvana.
+- **Luku ja sisällysluettelo yhdistetty**: kirjan nimen alla oleva luvun
+  nimi on nyt nappi (⌄), jonka alla näkyy luvun numero, eteneminen luvun
+  sisällä ja luvusta jäljellä oleva aika. Napautus avaa sisällysluettelon
+  alhaalta nousevana paneelina (sulkeutuu taustaa napauttamalla, alas
+  vetämällä tai Esc). Paneelissa: kuunneltu/jäljellä-yhteenveto, luvun
+  pituus, soivan luvun taajuuspalkit ja etenemisviiva. Kelluva
+  *kappaletta*-nappi, joka peitti nopeusvalinnan, on poistettu
+  kuuntelutilasta.
 
 - **USB-C-kuulokkeiden herätys asetuksiin, oletuksena 10 Hz / −30 dB**:
   ryhmä *USB-C-kuulokkeet* on sekä *Asetuksissa* että toiston aikana

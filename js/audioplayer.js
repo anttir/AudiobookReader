@@ -419,6 +419,9 @@ const AudioPlayer = {
         // Default subtitle: chapter title if the book ships one, else the
         // legacy "track X of Y" for multi-file books.
         this._currentChapterIndex = -1;
+        document.getElementById('chapter-chip-meta')?.classList.add('hidden');
+        const chip = document.getElementById('chapter-chip');
+        if (chip) chip.disabled = !(typeof App !== 'undefined' && App.hasChapterList());
         const chapters = book?.chapters;
         if (chapters?.length) {
             document.getElementById('audio-chapter').textContent = chapters[0].title;
@@ -1030,11 +1033,59 @@ const AudioPlayer = {
     },
 
     /**
+     * The stretch of audio the chapter chip tracks at time t: the current
+     * chapter, or for multi-file books the current file. Null when there
+     * is neither (single file) or the duration isn't known yet.
+     */
+    chapterSegment(t) {
+        const duration = this.audio?.duration;
+        const chapters = this._currentChapters();
+        if (chapters) {
+            const index = this._chapterIndexAt(t);
+            const end = index + 1 < chapters.length ? chapters[index + 1].start : duration;
+            if (!Number.isFinite(end)) return null;
+            return { index, count: chapters.length, start: chapters[index].start, end, isChapter: true };
+        }
+        if (this.playlist.length > 1 && Number.isFinite(duration)) {
+            return { index: this.currentIndex, count: this.playlist.length, start: 0, end: duration, isChapter: false };
+        }
+        return null;
+    },
+
+    /**
+     * Chapter chip under the title: "38/62 ━━━──── −12:31" — position
+     * within the current chapter, which the whole-book bar is too coarse
+     * to show. Also keeps the open table of contents live.
+     */
+    _renderChapterChip(t) {
+        const meta = document.getElementById('chapter-chip-meta');
+        if (!meta) return;
+        const seg = this.chapterSegment(t);
+        meta.classList.toggle('hidden', !seg);
+        if (!seg) return;
+        const pos = seg.isChapter ? `${seg.index + 1}/${seg.count}` : '';
+        const posEl = document.getElementById('chapter-chip-pos');
+        if (posEl.textContent !== pos) posEl.textContent = pos;
+        posEl.classList.toggle('hidden', !pos);
+        const left = '\u2212' + this.formatTime(Math.max(0, seg.end - t));
+        const leftEl = document.getElementById('chapter-chip-left');
+        if (leftEl.textContent !== left) leftEl.textContent = left;
+        const span = seg.end - seg.start;
+        const p = span > 0 ? Math.min(1, Math.max(0, (t - seg.start) / span)) : 0;
+        document.getElementById('chapter-chip-fill').style.transform = `scaleX(${p.toFixed(4)})`;
+        const list = document.getElementById('chapter-list');
+        if (typeof App !== 'undefined' && list && !list.classList.contains('hidden')) {
+            App.updateChapterListProgress();
+        }
+    },
+
+    /**
      * Update the chapter title displayed under the cover + in the header.
      * No-op when the index hasn't changed (so we don't thrash the DOM at
      * timeupdate's ~4Hz rate).
      */
     _updateCurrentChapter(currentTime) {
+        this._renderChapterChip(currentTime);
         const chapters = this._currentChapters();
         if (!chapters) return;
         const idx = this._chapterIndexAt(currentTime);
@@ -1859,6 +1910,8 @@ const AudioPlayer = {
             playIcon.classList.remove('hidden');
             pauseIcon.classList.add('hidden');
         }
+        // Equalizer on the playing row of the table of contents
+        document.getElementById('chapters')?.classList.toggle('playing', this.isPlaying);
     },
 
     /**
